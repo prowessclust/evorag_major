@@ -10,3 +10,4 @@ venv/
 dist/
 build/
 *.db
+score_store.json

@@ -1,0 +1,103 @@
+% This file is part of the multi-tex ECE 486 Final Project Report 
+% file name: report.tex
+
+% YOU CAN COMPILE FROM THIS FILE, THIS IS THE MAIN FILE
+
+\documentclass[12pt,a4paper,twoside]{report}
+%\usepackage{mathptmx} %Times font
+% Add these packages in preamble
+\usepackage{multirow}
+\usepackage[table]{xcolor}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage[ruled,lined,linesnumbered]{algorithm2e}
+\usepackage{amsfonts}
+\usepackage{color}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{chngcntr}
+\usepackage{cite}
+\usepackage{fancyhdr}
+\usepackage[export]{adjustbox}
+\usepackage{titlesec}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{mathtools}
+\usepackage[toc,page]{appendix}
+\usepackage[normalem]{ulem}
+\usepackage{booktabs}
+\usepackage{rotating}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{pdflscape}
+\usepackage [english]{babel}
+\usepackage [autostyle, english = american]{csquotes}
+\usepackage{listings}
+\MakeOuterQuote{"}
+
+\setlength{\voffset}{-0.75in}
+\setlength{\headsep}{10pt}
+\setlength{\parindent}{0cm}
+\raggedbottom
+
+\titlespacing{\section}{0pt}{0pt}{0pt}
+\counterwithin{figure}{chapter}
+\numberwithin{equation}{chapter}
+\renewcommand{\baselinestretch}{1.2}
+\renewcommand{\thetable}{\arabic{chapter}.\arabic{table}} 
+\renewcommand{\footrulewidth}{0.4pt}
+\textheight 245mm \textwidth 160mm \topmargin 15mm\setlength{\oddsidemargin}{.1in}
+\evensidemargin .1in 
+\titleformat{\chapter}[block]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter: }{0pt}{\huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{10pt}
+\pagestyle{fancy}
+\cfoot{}
+\lhead{{\footnotesize EvoRAG: Evolutionary Multi-Personality RAG}}
+\lfoot{Dept.of CSE, S.I.T.,Tumakuru-03}
+\rfoot{\thepage}
+\rhead{2025-26}
+\linespread{1.5}
+\numberwithin{equation}{chapter}
+\let\cleardoublepage\clearpage
+\bibliographystyle{unsrt}
+
+
+\begin{document}
+\addtocontents{toc}{\protect\thispagestyle{empty}}
+
+\input{cover_page.tex}
+\input{certificate.tex}
+\clearpage{\pagestyle{empty}\cleardoublepage}
+\input{acknowledgement.tex}
+\input{CourseOutcomes}
+%\input{ProjectEvaluationRubrics}
+\pagenumbering{roman}
+\input{abstract.tex}
+\tableofcontents
+\thispagestyle{empty}
+\pagenumbering{roman}
+\listoffigures
+\addcontentsline{toc}{chapter}{\numberline{}List of Figures}
+
+\listoftables
+\addcontentsline{toc}{chapter}{\numberline{}List of Tables}
+
+\cleardoublepage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\input{introduction.tex}
+\input{literature_review.tex}
+\input{technical_description.tex}
+%\input{results.tex}
+\input{conclusion.tex}
+\input{bibliography.tex}
+\input{appendix.tex}
+ 
+
+\end{document}
+

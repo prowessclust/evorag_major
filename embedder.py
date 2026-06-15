@@ -18,12 +18,18 @@ Usage (module — import from Phase 3):
 """
 
 import argparse
+import gc
 import glob
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
+
+# EvoRAG uses PyTorch sentence-transformers; avoid accidental TensorFlow/Keras imports.
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
 import numpy as np
 import faiss
@@ -37,6 +43,8 @@ from config import (
     EMBED_BATCH_SIZE,
     TOP_K_DEFAULT,
     DATA_DIR,
+    RETRIEVAL_CANDIDATE_MULTIPLIER,
+    RETRIEVAL_MIN_CANDIDATES,
 )
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -59,6 +67,16 @@ def _get_model() -> SentenceTransformer:
         _model = SentenceTransformer(EMBED_MODEL)
         log.info("Model loaded.")
     return _model
+
+
+def release_model() -> None:
+    """Unload the cached embedding model to free RAM before LLM generation."""
+    global _model
+    if _model is not None:
+        log.info("Releasing embedding model to free memory for Ollama.")
+        del _model
+        _model = None
+        gc.collect()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -159,11 +177,50 @@ def load_index() -> Tuple[faiss.Index, List[Dict]]:
 # 3. QUERY — semantic similarity search
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _document_keys(chunk: Dict) -> List[str]:
+    """Return all stable article-level identities for deduplicating chunks."""
+    keys = []
+
+    title = " ".join(str(chunk.get("title") or "").lower().split())
+    if title:
+        keys.append(f"title:{title}")
+
+    url_hash = str(chunk.get("url_hash") or "").strip().lower()
+    if url_hash:
+        keys.append(f"url_hash:{url_hash}")
+
+    url = str(chunk.get("url") or "").strip().lower().rstrip("/")
+    if url:
+        keys.append(f"url:{url}")
+
+    if not keys:
+        keys.append(f"chunk:{chunk.get('chunk_id', id(chunk))}")
+    return keys
+
+
+def deduplicate_results(results: List[Dict], limit: int) -> List[Dict]:
+    """Keep the highest-ranked chunk for each unique article/document."""
+    unique: List[Dict] = []
+    seen = set()
+
+    for chunk in results:
+        keys = _document_keys(chunk)
+        if any(key in seen for key in keys):
+            continue
+        seen.update(keys)
+        unique.append(chunk)
+        if len(unique) >= limit:
+            break
+
+    return unique
+
+
 def query(
     text: str,
     top_k: int = TOP_K_DEFAULT,
     index: Optional[faiss.Index] = None,
     metadata: Optional[List[Dict]] = None,
+    deduplicate: bool = True,
 ) -> List[Dict]:
     """
     Embed `text`, search the FAISS index, and return the top-k most similar
@@ -174,6 +231,8 @@ def query(
         top_k:    Number of results to return (default from config).
         index:    Pre-loaded faiss.Index (optional — avoids repeated disk I/O).
         metadata: Pre-loaded metadata list (optional — must pair with `index`).
+        deduplicate: When true, return top-k unique source documents instead of
+            allowing multiple chunks from the same article.
 
     Returns:
         List of chunk dicts (up to top_k), sorted by ascending L2 distance.
@@ -186,7 +245,11 @@ def query(
     if index is None or metadata is None:
         index, metadata = load_index()
 
-    actual_k = min(top_k, index.ntotal)
+    search_k = top_k
+    if deduplicate:
+        search_k = max(top_k * RETRIEVAL_CANDIDATE_MULTIPLIER, RETRIEVAL_MIN_CANDIDATES)
+
+    actual_k = min(search_k, index.ntotal)
     if actual_k == 0:
         log.warning("Index is empty — no results to return.")
         return []
@@ -208,7 +271,16 @@ def query(
         chunk["score"] = float(dist)   # L2 distance (lower = more similar)
         results.append(chunk)
 
-    return results
+    if deduplicate:
+        unique = deduplicate_results(results, limit=top_k)
+        log.info(
+            "Query returned %s unique documents from %s candidate chunks.",
+            len(unique),
+            len(results),
+        )
+        return unique
+
+    return results[:top_k]
 
 
 # ══════════════════════════════════════════════════════════════════════════════

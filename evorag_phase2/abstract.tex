@@ -1,0 +1,11 @@
+\chapter*{Abstract}
+\thispagestyle{plain}
+\addcontentsline{toc}{chapter}{\numberline{}Abstract}
+
+Large Language Models (LLMs) have become central to modern information retrieval.Despite their capabilities, LLMs are constrained by static training data and lack access to current or domain-specific knowledge. Retrieval-Augmented Generation (RAG) was introduced to address this limitation by enabling models to retrieve and incorporate external information at inference time. However, existing RAG systems follow a linear, single-pass pipeline that generates one response without exploring alternative interpretations or verifying factual accuracy. This results in outputs that are often one-sided, prone to hallucination, and lacking analytical depth.
+
+This project proposes \textbf{EvoRAG (Evolutionary Multi-Persona RAG)}, a framework designed to improve the quality and reliability of AI-generated responses through structured multi-perspective reasoning. EvoRAG orchestrates eight distinct AI personas, each representing a different reasoning style, to analyze the same retrieved context simultaneously. Responses are evaluated through an internal consensus mechanism that scores outputs based on factual accuracy, analytical depth, and clarity, ensuring the final answer reflects collective reasoning rather than a single viewpoint.
+
+The system includes an \textbf{Evolutionary Learning Engine} that tracks persona performance over time using internal win rates and user feedback, autonomously replacing underperforming agents with improved variants. Additionally, EvoRAG operates entirely on local hardware, eliminating dependence on external APIs and ensuring that sensitive user data remains private.
+
+The expected outcome is a significant reduction in AI hallucinations and a measurable improvement in response quality compared to standard RAG architectures, achieved through cognitive diversity, iterative refinement, and privacy-preserving local deployment.

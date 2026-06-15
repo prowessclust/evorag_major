@@ -1,0 +1,432 @@
+% ------------------------------------------------------------------
+%  CHAPTER 2 – LITERATURE SURVEY
+% ------------------------------------------------------------------
+\chapter{Literature Survey}
+ 
+This chapter provides a comprehensive review of recent advancements in
+Retrieval-Augmented Generation (RAG) and intelligent agent frameworks.
+The field has progressed considerably from static knowledge retrieval toward dynamic,
+corrective, and agentic systems that aim to minimise hallucinations and improve reasoning
+depth across a variety of knowledge-intensive tasks.
+The survey is structured to trace this progression from foundational contributions
+through to the most recent advances in agentic orchestration, memory management,
+hallucination mitigation, knowledge-graph integration, and hierarchical retrieval,
+culminating in an identification of the research gaps that EvoRAG is specifically
+designed to address.
+
+The foundational concepts behind EvoRAG are grounded in the original RAG
+framework~\cite{lewis2020rag} and the retrieval-aware reasoning advances exemplified
+by ReAct~\cite{yao2022react}.
+Work on tool-oriented model orchestration in Toolformer~\cite{schick2023toolformer}
+and the self-reflective generation architecture of Self-RAG~\cite{asai2023selfrag}
+also directly influence the way EvoRAG integrates external knowledge and internal
+consensus validation.
+The broader context for these contributions is provided by the foundational study of
+large-scale pre-trained language models as general-purpose systems~\cite{bommasani2021foundation},
+which established the conceptual framework within which all subsequent retrieval
+augmentation research is situated.
+ 
+% ------------------------------------------------------------------
+\section{Agentic RAG Frameworks}
+% ------------------------------------------------------------------
+ 
+The shift from traditional RAG pipelines to agentic architectures represents one of
+the most significant developments in the field over the past two years.
+Singh et al.~\cite{singh2025agenticrag} provide a comprehensive survey of Agentic RAG
+systems, introducing a principled taxonomy of architectures classified by agent
+cardinality, control structure, autonomy, and knowledge representation.
+Their analysis demonstrates how embedding autonomous agents into the RAG pipeline
+enables dynamic retrieval strategy management, iterative context refinement, and
+multi-step reasoning that static, single-pass workflows are fundamentally unable to
+achieve.
+A key insight from this survey is that no single retrieval granularity is universally
+optimal; effective agentic systems must be capable of dynamically selecting between
+keyword, semantic, and document-level retrieval depending on the information density
+of the query.
+ 
+Complementing this taxonomic perspective, Du et al.~\cite{du2026arag} introduce
+A-RAG, a hierarchical retrieval interface framework that exposes keyword search,
+semantic search, and chunk-level read tools directly to the language model.
+By granting the model the capacity to adaptively navigate across multiple retrieval
+granularities, A-RAG consistently outperforms prior approaches while maintaining
+comparable or lower retrieved token counts — demonstrating that architectural
+flexibility can compensate for brute-force context scaling.
+This finding is particularly relevant to EvoRAG's retrieval module, which similarly
+distinguishes between coarse topic retrieval and fine-grained passage extraction
+depending on the complexity of the query issued by each active persona.
+ 
+More recently, the growing intersection of agentic retrieval and deep reasoning has
+been surveyed by Li et al.~\cite{li2025ragreas}, who introduce a unified
+Reasoning-Retrieval perspective that categorises methods along two complementary
+axes: \emph{Reasoning-Enhanced RAG}, in which advanced reasoning optimises
+individual stages of the retrieval pipeline; and \emph{RAG-Enhanced Reasoning}, in
+which retrieved knowledge provides the missing factual premises required for complex
+multi-step inference.
+Their survey further identifies emerging \emph{Synergised RAG-Reasoning} frameworks,
+where agentic LLMs iteratively interleave search and reflection to achieve
+state-of-the-art performance on knowledge-intensive benchmarks — a paradigm that
+directly informs the EvoRAG design.
+The survey's emphasis on the mutual dependence of retrieval quality and reasoning
+quality underlines why EvoRAG's personas are each assigned a distinct reasoning
+style rather than simply sharing a common prompt template.
+
+% ------------------------------------------------------------------
+\section{Hierarchical and Graph-Based Retrieval Architectures}
+% ------------------------------------------------------------------
+
+A significant limitation of flat chunk-based retrieval is its inability to capture
+the hierarchical and relational structure present in real-world document corpora.
+Two complementary research directions have emerged to address this: recursive
+abstractive retrieval and graph-based retrieval.
+
+Sarthi et al.~\cite{sarthi2024raptor} introduce RAPTOR (Recursive Abstractive
+Processing for Tree-Organized Retrieval), a framework that recursively clusters
+and summarises retrieved text chunks into progressively higher-level abstractions,
+constructing a tree structure over the document corpus.
+At query time, retrieval can proceed at any level of the tree, enabling the system
+to match coarse thematic queries against high-level summaries while still supporting
+fine-grained factual lookups at the leaf level.
+RAPTOR demonstrates substantial gains over flat retrieval baselines on multi-step
+reasoning tasks, confirming that structural organisation of the retrieval index
+yields qualitative improvements in answer coherence.
+This hierarchical indexing principle informs EvoRAG's approach to knowledge base
+construction, wherein retrieved passages are organised by topic cluster before
+being distributed to individual personas.
+
+Edge et al.~\cite{edge2024graphrag} extend the retrieval paradigm further by
+proposing GraphRAG, a system that pre-constructs a community-structured knowledge
+graph from an input corpus and uses this graph to answer global, query-focused
+summarisation tasks.
+By traversing the graph at the community level rather than retrieving isolated
+passages, GraphRAG captures cross-document relationships and thematic patterns
+that are entirely invisible to conventional vector-search retrieval.
+The practical implication is that for analytical queries requiring synthesis across
+many documents — precisely the class of queries for which EvoRAG is designed —
+graph-structured retrieval provides qualitatively richer context than passage-level
+retrieval alone.
+
+The challenge of integrating structured knowledge from knowledge graphs with the
+generative capabilities of LLMs is surveyed comprehensively by
+Pan et al.~\cite{pan2024unifying}, who identify three principal integration
+strategies: using LLMs to enhance knowledge graph construction, using knowledge
+graphs to constrain LLM generation, and jointly training models over both text and
+graph-structured data.
+Their analysis highlights that hybrid retrieval — grounding generation in both
+unstructured text and structured relational knowledge — consistently outperforms
+either modality in isolation, particularly for queries involving entity-level
+factual precision.
+EvoRAG's architecture acknowledges this finding by designing the retrieval layer
+to be modality-agnostic, capable of ingesting both plain text documents and
+structured data formats.
+
+% ------------------------------------------------------------------
+\section{Hallucination Detection and Reliability in RAG Systems}
+% ------------------------------------------------------------------
+
+The tendency of large language models to produce factually incorrect yet
+linguistically fluent outputs — a phenomenon widely referred to as hallucination —
+represents the primary reliability challenge in deploying LLM-based systems for
+high-stakes analytical tasks.
+Manakul et al.~\cite{manakul2023selfcheckgpt} introduce SelfCheckGPT, a zero-resource
+black-box hallucination detection method that exploits the statistical consistency
+of multiple stochastic samples from the same model.
+The core insight is that factual claims in a model's output will be consistently
+reproduced across independently sampled responses if and only if those claims are
+supported by strong parametric knowledge; hallucinated content, by contrast, tends
+to vary inconsistently across samples.
+SelfCheckGPT achieves state-of-the-art hallucination detection on the WikiBio
+benchmark without requiring any reference documents or model internals, making it
+directly applicable to black-box deployment scenarios.
+This self-consistency principle is directly operationalised in EvoRAG's peer-review
+scoring mechanism, where claims that appear consistently across multiple independently
+generated persona responses receive higher consensus confidence scores.
+
+Mallen et al.~\cite{mallen2023trust} investigate the conditions under which language
+models should be trusted to answer from parametric memory versus those in which
+external retrieval is essential.
+Their study demonstrates that model confidence is a poor predictor of factual
+accuracy for long-tail or temporally sensitive entities, motivating the need for
+always-on retrieval rather than retrieval triggered only on model uncertainty signals.
+This finding provides empirical justification for EvoRAG's unconditional retrieval
+strategy, in which all queries are routed through the knowledge ingestion pipeline
+regardless of perceived difficulty, ensuring that no query relies solely on
+potentially stale parametric knowledge.
+
+Shi et al.~\cite{shi2023replug} address the complementary problem of augmenting
+black-box language models — those whose parameters cannot be modified — with a
+retrieval component, through REPLUG (Retrieve and Plug).
+REPLUG treats the language model as a scoring function and retrieves documents
+whose prepending to the context maximises the model's likelihood on the query,
+without any gradient-based fine-tuning of the underlying model.
+This plug-and-play design philosophy is directly relevant to EvoRAG's architecture,
+which runs retrieval-augmented generation over a locally deployed model whose
+weights remain fixed, with adaptation achieved entirely through the evolutionary
+persona configuration layer rather than through model retraining.
+
+% ------------------------------------------------------------------
+\section{Multi-Agent Collaboration in RAG}
+% ------------------------------------------------------------------
+ 
+Multi-agent collaboration has emerged as a particularly productive direction for
+handling complex, ambiguous information-seeking tasks that exceed the capacity of any
+single-agent pipeline.
+Nguyen et al.~\cite{nguyen2025marag} present MA-RAG, a training-free multi-agent
+framework that orchestrates four specialised agents — a Planner, a Step Definer, an
+Extractor, and a QA Agent — to decompose queries into subtasks including query
+disambiguation, evidence extraction, and answer synthesis.
+By enabling agents to communicate via chain-of-thought reasoning, MA-RAG achieves
+improved accuracy and interpretability on multi-hop and ambiguous question-answering
+benchmarks without any model fine-tuning.
+The framework's design makes explicit what has long been implicit in multi-step
+retrieval pipelines: that different sub-tasks within a complex query require
+qualitatively different reasoning strategies, and that separating these strategies
+into distinct agents yields more reliable outcomes than conflating them within a
+single prompt.
+ 
+The problem of heterogeneous retrieval across structured and unstructured data sources
+is addressed by Xiao et al.~\cite{xiao2026massrag}, who propose MASS-RAG, a
+Multi-Agent Synthesis approach that assigns distinct roles to separate evidence
+summarisation, evidence extraction, and reasoning agents.
+By combining their intermediate outputs through a dedicated synthesis stage,
+MASS-RAG exposes multiple complementary evidence views before committing to a final
+answer, yielding consistent performance improvements over strong single-agent baselines.
+Xu et al.~\cite{xu2026anchorrag} address the related challenge of open-world
+knowledge graph traversal through AnchorRAG, a framework in which a supervisor agent
+formulates iterative retrieval strategies for subordinate retriever agents, which
+conduct parallel graph traversal before synthesising the resulting knowledge paths.
+This hierarchical delegation strategy improves retrieval robustness and substantially
+mitigates the impact of ambiguous or erroneous anchor entities, establishing new
+state-of-the-art results on real-world multi-hop reasoning tasks.
+
+The collective insight from these multi-agent frameworks is that the decomposition
+of retrieval, reasoning, and synthesis into separate agents controlled by a
+coordinator — whether heuristic or learned — is a broadly effective design pattern.
+EvoRAG differs from this pattern not in its use of multiple agents but in the
+nature of their interaction: rather than specialising each agent by function, EvoRAG
+specialises agents by reasoning \emph{style}, allowing the same retrieval context
+to be interpreted through distinct analytical lenses before a consensus is formed.
+
+% ------------------------------------------------------------------
+\section{Training and Traceability in Agentic RAG}
+% ------------------------------------------------------------------
+ 
+End-to-end training of agentic RAG systems using reinforcement learning has shown
+strong promise for improving both retrieval reliability and reasoning traceability.
+Zheng et al.~\cite{zheng2025deepdx} introduce Deep-DxSearch, an agentic RAG system
+trained via reinforcement learning over a corpus of disease profiles, patient records,
+and biomedical documents.
+By co-optimising retrieval and reasoning through soft verifiable rewards, the system
+learns to formulate queries, evaluate evidence, and iteratively refine searches —
+directly addressing the disconnect from evidence-based reasoning that is endemic to
+static RAG pipelines.
+The medical domain context of this work is instructive: it demonstrates that
+end-to-end RL training can instil traceable, evidence-grounded reasoning behaviours
+even in the absence of direct supervision on intermediate reasoning steps.
+
+The use of human preference signals to align language model behaviour more broadly
+was established by Ouyang et al.~\cite{ouyang2022rlhf}, whose InstructGPT system
+demonstrated that fine-tuning a language model via reinforcement learning from human
+feedback (RLHF) produces outputs that are substantially more aligned with user intent
+than those produced by a purely instruction-tuned model of the same scale.
+The principle that empirical feedback from evaluators can be used to guide model
+behaviour without retraining its core parameters is directly echoed in EvoRAG's
+evolutionary engine, which treats user feedback and peer-review win rates as a
+lightweight form of preference signal used to promote or demote individual persona
+configurations.
+
+% ------------------------------------------------------------------
+\section{Data Synthesis for Robust RAG Agents}
+% ------------------------------------------------------------------
+ 
+A critical bottleneck in developing robust agentic RAG systems is the scarcity of
+high-quality training data that faithfully reflects the retrieval noise encountered in
+real-world deployments.
+Addressing this gap, RAGShaper~\cite{anonymous2026ragshaper} introduces an automated
+data synthesis framework that constructs dense information trees enriched with
+adversarial distractor documents.
+A constrained navigation strategy forces a teacher agent to actively confront these
+distractors during trajectory generation, eliciting demonstrations that explicitly
+model error correction and noise rejection.
+Models trained on these synthetic trajectories significantly outperform baselines that
+train on clean corpora, indicating that controlled adversarial exposure is a viable and
+scalable path to improving agent robustness.
+
+The closely related problem of enabling few-shot generalisation in retrieval-augmented
+models is addressed by Izacard et al.~\cite{izacard2022atlas}, who introduce Atlas,
+a pre-trained retrieval-augmented language model that achieves strong few-shot
+performance on knowledge-intensive tasks by jointly training the retriever and the
+reader end-to-end.
+Atlas demonstrates that a model with access to a large, up-to-date retrieval index
+can match or outperform models with orders-of-magnitude more parameters on factual
+tasks, provided that the retriever and reader are trained in coordination.
+This result motivates EvoRAG's emphasis on tight coupling between the retrieval
+pipeline and the persona reasoning layer, rather than treating retrieval as a
+preprocessing step decoupled from generation.
+ 
+% ------------------------------------------------------------------
+\section{Memory and Long-Term Knowledge in AI Agents}
+% ------------------------------------------------------------------
+ 
+Memory management is increasingly recognised as a foundational capability for
+intelligent agents operating in complex, multi-session environments.
+Hu et al.~\cite{hu2025memory} provide a comprehensive landscape of agent memory
+research, proposing a unified taxonomy structured along three axes:
+\emph{forms} (token-level, parametric, and latent memory);
+\emph{functions} (factual, experiential, and working memory); and
+\emph{dynamics} (formation, evolution, and retrieval).
+This taxonomy moves beyond the conventional long-term versus short-term dichotomy and
+establishes that agent failures are often rooted in deficiencies in memory dynamics
+rather than model capacity alone — a finding with direct implications for the EvoRAG
+evolutionary learning engine.
+ 
+Complementing this taxonomic foundation, the challenge of \emph{joint} long-term and
+short-term memory management has been formalised by
+Chen et al.~\cite{chen2026agemem}, who propose AgeMem, a reinforcement learning-based
+framework in which an agent learns autonomous policies for promoting, consolidating,
+and retrieving information across memory tiers.
+Their experiments demonstrate that an RL-trained agent substantially outperforms
+heuristic-based memory management strategies on both embodied reasoning and
+knowledge-intensive question-answering tasks, underscoring the practical value of
+learning-based memory governance.
+ 
+A further dimension of memory research, focused specifically on personalised
+conversational continuity, is explored in the Memory OS of AI Agents
+framework~\cite{bai2025memos}, which introduces a segmented paging architecture
+for dialogue-chain memory.
+The system partitions memory into active, inactive, and archival tiers governed by
+heat-based mechanisms that model the temporal importance decay of stored episodes.
+This operating-system-inspired abstraction enables contextual coherence and
+personalised recall across extended, multi-session interactions — a capability that
+EvoRAG's user adaptation module is designed to approximate through per-persona
+affinity modelling.
+The analogy between operating-system memory management and agent knowledge retention
+is particularly apt: just as an OS must balance fast access to recently used pages
+with long-term persistence of infrequently accessed data, EvoRAG must balance
+responsiveness to recent user preferences with the cumulative evolutionary history
+that determines which personas have demonstrated sustained analytical value.
+ 
+% ------------------------------------------------------------------
+\section{Comparative Evaluation of RAG Approaches}
+% ------------------------------------------------------------------
+ 
+As RAG systems grow in architectural complexity, systematic and reproducible evaluation
+becomes increasingly critical for guiding practical deployment decisions.
+Besrour et al.~\cite{besrour2026agenticvsenh} conduct an experiment-driven comparison
+between Enhanced RAG and Agentic RAG across multiple domains, examining the impact of
+LLM quality on system robustness and identifying the practical performance trade-offs
+between fixed pipeline and agentic orchestration approaches.
+Their findings provide actionable guidance for practitioners choosing between the two
+paradigms and confirm that agentic orchestration offers measurable advantages on
+multi-hop and reasoning-intensive queries, but that this advantage diminishes when
+the underlying LLM quality is insufficient to support reliable tool use.
+ 
+Addressing the absence of principled evaluation benchmarks for the RAG field more
+broadly, Gan et al.~\cite{gan2025rageval} present a comprehensive survey of RAG
+evaluation methods and frameworks, systematically reviewing traditional and emerging
+approaches across four dimensions: system performance, factual accuracy, safety, and
+computational efficiency.
+Their meta-analysis of evaluation practices in high-impact RAG research reveals
+persistent inconsistencies in how retrieval and generation quality are measured,
+motivating the need for standardised benchmarking protocols of the kind that EvoRAG's
+internal peer-review mechanism approximates at the system level.
+The study's finding that most existing evaluation frameworks assess retrieval and
+generation in isolation — rather than as an integrated system — provides additional
+motivation for EvoRAG's end-to-end consensus scoring approach, which measures the
+quality of the complete retrieval-reasoning-synthesis pipeline rather than its
+individual components.
+
+% ------------------------------------------------------------------
+\section{Established Foundations}
+% ------------------------------------------------------------------
+ 
+The literature surveyed in the preceding sections builds upon a set of foundational
+contributions that established the conceptual and technical basis of the field.
+Lewis et al.~\cite{lewis2020rag} introduced the original RAG framework, demonstrating
+for the first time that retrieval-augmented generation could substantially improve
+performance on knowledge-intensive NLP tasks by grounding generation in non-parametric
+external knowledge.
+Guu et al.~\cite{guu2020realm} extended this paradigm to the pre-training phase through
+REALM, showing that retrieval can be incorporated into language model pre-training
+via differentiable document retrieval.
+Izacard and Grave~\cite{izacard2021passage} further consolidated the passage-retrieval
+paradigm by demonstrating that fusing multiple retrieved passages through a generative
+reader yields strong open-domain question-answering performance.
+ 
+On the reasoning side, Wei et al.~\cite{wei2022cot} established chain-of-thought
+prompting as the dominant paradigm for eliciting multi-step reasoning in large language
+models, providing the conceptual foundation upon which virtually all agentic systems
+surveyed above are built.
+Yao et al.~\cite{yao2022react} subsequently operationalised this insight in the context
+of retrieval by proposing the ReAct framework, which interleaves reasoning traces and
+retrieval actions to enable more informed, iterative information-seeking behaviour.
+Finally, Asai et al.~\cite{asai2023selfrag} introduced Self-RAG, a self-reflective
+generation paradigm in which the model learns to critique both its retrieved evidence
+and its generated outputs through specialised reflection tokens — establishing the
+principle of internal quality control that directly motivates EvoRAG's consensus-based
+peer-review mechanism.
+ 
+% ---------------------------------------------------------------
+\section{Research Gaps}
+
+Despite the rapid progression of RAG and agentic AI systems, several important
+limitations remain unaddressed in the current body of research, and it is precisely
+these gaps that EvoRAG is designed to close.
+
+\begin{itemize}
+
+    \item \textbf{Absence of Parallel Multi-Perspective Reasoning:}
+    Most existing RAG and agentic frameworks generate a single final response, even
+    when intermediate reasoning steps are involved. Task decomposition across sequential
+    agents is not equivalent to the simultaneous generation of competing analytical
+    perspectives that are collectively evaluated before a consensus answer is produced.
+    No existing system — including MA-RAG~\cite{nguyen2025marag},
+    MASS-RAG~\cite{xiao2026massrag}, or AnchorRAG~\cite{xu2026anchorrag} — implements
+    this cognitive-diversity model at the intra-query level.
+
+    \item \textbf{Limited Personalisation:}
+    Current systems operate in a largely generic fashion and do not adapt their reasoning
+    strategies in response to individual user preferences or accumulated feedback over
+    time. Memory-based approaches such as AgeMem~\cite{chen2026agemem} and
+    MemOS~\cite{bai2025memos} address information retention but do not actively
+    modulate reasoning diversity or decision-making styles to match evolving user
+    expectations.
+
+    \item \textbf{Absence of Continuous Self-Improvement:}
+    Most RAG pipelines remain architecturally static after deployment. Even in advanced
+    agentic systems, there is minimal emphasis on dynamically evolving internal reasoning
+    components in response to performance metrics or user interaction history.
+    While RLHF~\cite{ouyang2022rlhf} and RL-based training~\cite{zheng2025deepdx}
+    demonstrate the feasibility of feedback-driven adaptation, neither approach has been
+    integrated into a live multi-persona consensus framework that adapts without
+    retraining the base model.
+
+    \item \textbf{Dependence on Cloud Infrastructure:}
+    A significant proportion of high-performance RAG systems rely on cloud-based APIs
+    and external computation resources, introducing concerns related to data privacy,
+    regulatory compliance, latency, and operational cost. REPLUG~\cite{shi2023replug}
+    demonstrates that black-box augmentation is feasible, but the referenced system
+    still depends on externally hosted model endpoints. Locally deployed alternatives
+    with comparable analytical depth remain largely unexplored in existing research.
+
+    \item \textbf{Insufficient Handling of Conflicting Information:}
+    Current retrieval systems optimise for relevance but frequently fail to explicitly
+    resolve contradictory or conflicting information retrieved from multiple sources.
+    Even hallucination detection methods such as SelfCheckGPT~\cite{manakul2023selfcheckgpt}
+    operate post-hoc on a single generation rather than proactively resolving conflicts
+    across multiple retrieved evidence threads. Structured comparison and
+    consensus-building mechanisms within RAG pipelines remain underexplored.
+
+    \item \textbf{Static Knowledge Interaction:}
+    Even in adaptive retrieval systems such as RAPTOR~\cite{sarthi2024raptor} and
+    GraphRAG~\cite{edge2024graphrag}, interaction with retrieved knowledge remains
+    largely linear and does not incorporate iterative debate, critique, or mutual
+    validation among multiple reasoning agents. The retrieved content informs a single
+    generation trajectory rather than seeding a structured deliberation process.
+
+\end{itemize}
+
+These gaps collectively highlight the need for a system that integrates multi-perspective
+reasoning, adaptive learning, and privacy-preserving local deployment within a unified
+framework. EvoRAG addresses these limitations through a multi-persona reasoning engine,
+a consensus-based peer-review mechanism, and an evolutionary learning layer that
+continuously refines system performance based on empirical outcome data.

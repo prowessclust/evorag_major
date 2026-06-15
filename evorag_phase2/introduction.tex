@@ -1,0 +1,153 @@
+\chapter{Introduction}
+
+Large Language Models (LLMs) have transformed the field of natural
+language processing, enabling computational systems to generate coherent, contextually
+relevant responses across a wide range of tasks.
+However, LLMs are constrained by a fundamental limitation: their knowledge is fixed
+at the point of training.
+When queried on topics beyond this boundary, models frequently produce responses that
+are factually incorrect, a behaviour commonly referred to as
+hallucination.
+
+Retrieval-Augmented Generation (RAG) was introduced to mitigate this limitation by
+enabling models to retrieve relevant information from external sources before generating
+a response.
+This approach grounds model outputs in real-world data and reduces reliance on static
+parametric knowledge.
+Subsequent work extended this paradigm further — first by demonstrating that fusing
+multiple retrieved passages yields measurable gains on open-domain question
+answering, and then by integrating retrieval directly into the pre-training stage,
+producing representations that are inherently more
+knowledge-aware.
+
+Despite these advances, standard RAG implementations operate through a linear,
+single-pass pipeline that retrieves a document, reads it once, and produces a single
+response.
+This design assumes a single valid interpretation of the retrieved content, which is
+insufficient for complex analytical tasks that require critical evaluation,
+cross-verification, or multi-perspective reasoning.
+Efforts to address this limitation have led to frameworks that interleave retrieval
+with iterative reasoning, and to self-reflective generation
+mechanisms that allow a model to evaluate the quality of both its retrieved evidence
+and its generated output before producing a final answer.
+
+In addition, most high-performance RAG systems depend on cloud-based infrastructure,
+requiring user queries and potentially sensitive data to be transmitted to external
+servers.
+This raises significant concerns regarding data privacy and sovereignty, particularly
+in professional, medical, or research contexts where confidentiality is
+essential.
+Furthermore, existing systems are largely static; they do not adapt based on past
+interactions or evolving user requirements, making repeated errors likely and limiting
+their long-term utility.
+
+To address these limitations, this project proposes \textbf{EvoRAG (Evolutionary
+Multi-Persona RAG)}, a locally deployed, multi-agent framework that enhances
+retrieval-augmented generation through structured cognitive
+diversity.
+EvoRAG orchestrates eight distinct AI personas, each with a different reasoning style,
+to analyse retrieved content simultaneously and independently.
+Their outputs are evaluated through an internal consensus mechanism that scores
+responses based on factual accuracy, analytical depth, and clarity.
+The system further incorporates an \emph{Evolutionary Learning Engine} that monitors
+persona performance over time and autonomously replaces underperforming agents with
+improved variants, based on internal win rates and user feedback.
+All processing is performed on local hardware, ensuring that no user data is transmitted
+externally.
+
+% ------------------------------------------------------------------
+\section{Motivation}
+
+The decision to undertake EvoRAG as a project was driven by a confluence of
+real-world observations and unresolved technical gaps in the current landscape of
+AI-driven information systems.
+As large language models became embedded in decision-making across healthcare, education,
+legal services, and public discourse, a clear pattern emerged: these systems are capable
+of generating highly confident yet factually incorrect responses, a behaviour with direct
+consequences for anyone relying on them.
+Witnessing the gap between the trust users place in AI-generated answers and the actual
+reliability of those answers made it evident that the existing single-pass retrieval and
+generation paradigm was insufficient for high-stakes analytical tasks.
+
+A further motivating observation was the structural incompatibility of cloud-dependent
+RAG deployments with privacy-sensitive domains.
+In fields such as clinical medicine, legal practice, and enterprise research, routing
+queries through external servers is not merely inconvenient — it may constitute a
+direct regulatory violation.
+The absence of a capable, locally deployable alternative that could match the analytical
+depth of hosted systems represented a concrete and pressing gap that this project
+is designed to fill.
+
+The project was also motivated by the absence of any mechanism for transparency and
+explainability in how existing RAG systems arrive at their responses.
+A single answer, produced by a single reasoning trajectory, provides no insight into
+what alternative interpretations were considered or rejected.
+For users in professional contexts, this opacity undermines trust and limits
+accountability.
+EvoRAG was conceived to address this by making the diversity of reasoning visible —
+eight independent personas each produce an analytical response before a consensus
+is formed, giving users a richer and more auditable view of the reasoning process.
+
+On the technical side, the specific limitations of existing RAG architectures provided
+equally compelling motivation.
+Standard pipelines retrieve a document, process it once, and emit a single output with
+no internal mechanism to challenge, verify, or cross-validate the result.
+Recent work on retrieval-interleaved reasoning and self-reflective generation has
+shown the value of iterative evaluation, yet
+these advances have not been integrated into a unified, locally deployable,
+consensus-driven framework.
+Furthermore, all deployed RAG systems observed during the course of this project shared
+a common architectural flaw: they do not improve over time.
+Query history, user feedback, and observed performance outcomes are discarded after
+each session, making systematic error correction impossible without manual retraining.
+This motivated the design of EvoRAG's evolutionary learning engine, which autonomously
+refines persona configurations based on empirical win rates and accumulated feedback,
+enabling the system to become more effective the longer it is used.
+
+% ------------------------------------------------------------------
+\section{Objectives of the Project}
+% ------------------------------------------------------------------
+
+The primary goals of the EvoRAG project are:
+
+\begin{itemize}
+    \item To build a robust pipeline that can autonomously retrieve and index external
+          knowledge for local use at runtime, in direct response to each user query.
+    \item To design a multi-agent framework that simulates eight distinct AI personas
+          to provide diverse, parallel analytical views of the same retrieved context.
+    \item To implement a peer-review scoring system that programmatically filters out
+          weak or inaccurate responses through a structured consensus mechanism.
+    \item To develop an evolutionary tracking system that improves the system's
+          reasoning capability over time based on win rates and user feedback, without
+          manual reconfiguration or retraining of the base model.
+    \item To ensure all operations are local and privacy-preserving, removing the
+          dependency on external APIs or cloud-based services entirely.
+\end{itemize}
+
+\section{Organisation of the Report}
+
+This report is structured to provide comprehensive coverage of the proposed system's
+design and implementation. The content is organised across five chapters as follows:
+
+\begin{itemize}
+    \item \textbf{Chapter 1: Introduction} — Presents the background, motivation, and
+          objectives of the EvoRAG project, establishing the research context and the
+          limitations of existing RAG systems that this work seeks to address.
+
+    \item \textbf{Chapter 2: Literature Survey} — Surveys the relevant literature
+          across agentic RAG frameworks, multi-agent collaboration, memory management,
+          and evaluation methodology, and identifies the specific research gaps that
+          EvoRAG is designed to address.
+
+    \item \textbf{Chapter 3: System Overview} — Describes the functional and
+          non-functional requirements of the system alongside the hardware, software,
+          and overall architectural design of the proposed solution.
+
+    \item \textbf{Chapter 4: Methodology} — Details the implementation approach,
+          covering dataset preparation, knowledge ingestion, and the algorithmic
+          operation of each core engine within the EvoRAG pipeline.
+
+    \item \textbf{Chapter 5: Conclusion} — Presents the overall conclusions of the
+          project, reflects on current limitations of the implemented system, and
+          outlines directions for future research and development.
+\end{itemize}
