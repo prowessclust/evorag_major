@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EvoRAG — Evolutionary Multi-Persona Research Assistant</title>
+  <meta name="description" content="EvoRAG is a research tool that uses multiple AI personas to generate, vote on, and synthesise answers to complex research questions." />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ── Design tokens ──────────────────────────────────────────────── */
+    :root {
+      --bg:        #0f0f13;
+      --surface:   #1a1a24;
+      --surface2:  #22223a;
+      --border:    #2e2e46;
+      --accent:    #6c63ff;
+      --accent2:   #8b85ff;
+      --text:      #e8e8f0;
+      --muted:     #7a7a9a;
+      --success:   #43e97b;
+      --warn:      #f7971e;
+      --error:     #ff4e6a;
+      --radius:    12px;
+      --radius-sm: 8px;
+      --shadow:    0 4px 24px rgba(0,0,0,.55);
+      --font:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    /* ── Reset / Base ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    .app {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    .header {
+      padding: 40px 0 32px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+    }
+    .header-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--accent), #a18cd1);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 4px 14px;
+      border-radius: 100px;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: clamp(28px, 5vw, 48px);
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, #fff 40%, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+    .header p {
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ── Section titles ──────────────────────────────────────────────── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--accent2);
+      margin-bottom: 16px;
+    }
+
+    /* ── Card ───────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── Query section ──────────────────────────────────────────────── */
+    #section-query { margin-bottom: 32px; }
+
+    .query-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #query-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      padding: 16px 20px;
+      resize: vertical;
+      min-height: 100px;
+      transition: border-color .2s;
+      outline: none;
+    }
+    #query-input:focus { border-color: var(--accent); }
+    #query-input::placeholder { color: var(--muted); }
+
+    .query-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    #analyse-btn {
+      background: linear-gradient(135deg, var(--accent), #8b85ff);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 15px;
+      font-weight: 700;
+      padding: 12px 32px;
+      letter-spacing: .3px;
+      transition: opacity .2s, transform .15s;
+      flex-shrink: 0;
+    }
+    #analyse-btn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+    #analyse-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    #analyse-btn.loading { animation: pulse-btn 1.4s ease-in-out infinite; }
+
+    @keyframes pulse-btn {
+      0%, 100% { opacity: .5; }
+      50% { opacity: 1; }
+    }
+
+    .toggle-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .toggle-row label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+    }
+
+    /* ── Progress bar ─────────────────────────────────────────────── */
+    #progress-wrap {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    #progress-wrap.visible { display: flex; }
+    .progress-track {
+      height: 3px;
+      background: var(--border);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #a18cd1, var(--accent));
+      background-size: 200% 100%;
+      animation: progress-shimmer 1.8s linear infinite;
+      width: 100%;
+    }
+    @keyframes progress-shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    #progress-msg {
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    /* ── Banners ──────────────────────────────────────────────────── */
+    .banner {
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .banner.visible { display: block; }
+    .banner-error  { background: rgba(255,78,106,.12); border: 1px solid rgba(255,78,106,.35); color: #ff7a8a; }
+    .banner-warn   { background: rgba(247,151,30,.1);  border: 1px solid rgba(247,151,30,.3);  color: #f7b14e; }
+
+    /* ── Consensus section ────────────────────────────────────────── */
+    #section-consensus { display: none; margin-bottom: 32px; }
+    #section-consensus.visible { display: block; }
+
+    .consensus-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .consensus-header-left h2 { font-size: 20px; font-weight: 700; }
+    .consensus-header-left .query-id {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: monospace;
+    }
+
+    #answer-text {
+      font-size: 16px;
+      line-height: 1.8;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      transition: background .15s;
+      margin-bottom: 20px;
+    }
+    #answer-text:hover { background: rgba(108,99,255,.07); }
+
+    /* Personas pills */
+    .top-personas-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    #top-personas-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .persona-pill {
+      border-radius: 100px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .3px;
+      border: 1.5px solid transparent;
+    }
+
+    /* ── Toast ─────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--accent);
+      color: #fff;
+      border-radius: 100px;
+      padding: 9px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s, transform .25s;
+      z-index: 9999;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Persona section ──────────────────────────────────────────── */
+    #section-personas { display: none; margin-bottom: 32px; }
+    #section-personas.visible { display: block; }
+
+    .panels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 1024px) { .panels-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px)  { .panels-grid { grid-template-columns: 1fr; } }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent2);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+    }
+
+    /* Panel A — persona cards grid */
+    #persona-cards-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 640px) { #persona-cards-grid { grid-template-columns: 1fr; } }
+
+    .persona-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      position: relative;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .persona-card.top-3 {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 4px 20px rgba(108,99,255,.25);
+    }
+    .persona-card.dimmed { opacity: .45; }
+
+    .pc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .pc-name {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .pc-score {
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 2px 9px;
+    }
+    .pc-text {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .pc-readmore {
+      background: none;
+      border: none;
+      color: var(--accent2);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0;
+      margin-top: 4px;
+      font-family: var(--font);
+    }
+
+    /* Panel B — Score matrix */
+    .matrix-wrap {
+      overflow-x: auto;
+    }
+    #score-matrix-table {
+      border-collapse: collapse;
+      font-size: 11px;
+      width: 100%;
+      min-width: 320px;
+    }
+    #score-matrix-table th, #score-matrix-table td {
+      border: 1px solid var(--border);
+      text-align: center;
+      padding: 5px 7px;
+    }
+    #score-matrix-table th {
+      background: var(--surface2);
+      color: var(--muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    #score-matrix-table th:first-child { text-align: left; }
+    #score-matrix-table td { position: relative; cursor: default; }
+    #score-matrix-table td.self-cell { color: var(--muted); }
+    .matrix-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111;
+      color: #ddd;
+      border-radius: 6px;
+      padding: 5px 10px;
+      white-space: nowrap;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      pointer-events: none;
+      z-index: 100;
+    }
+    #score-matrix-table td:hover .matrix-tooltip { display: block; }
+
+    /* Panel C — Sources */
+    .source-list { display: flex; flex-direction: column; gap: 10px; }
+    .source-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+    }
+    .source-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .source-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .source-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      background: rgba(108,99,255,.15);
+      color: var(--accent2);
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+    .source-score {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Evolution section ────────────────────────────────────────── */
+    #section-evolution { margin-bottom: 32px; }
+
+    #chart-canvas {
+      width: 100%;
+      max-height: 320px;
+    }
+
+    .stats-table-wrap { margin-top: 24px; overflow-x: auto; }
+    #stats-table {
+      border-collapse: collapse;
+      font-size: 12px;
+      width: 100%;
+    }
+    #stats-table th, #stats-table td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      text-align: center;
+    }
+    #stats-table th {
+      background: var(--surface2);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    #stats-table td:first-child { text-align: left; font-weight: 600; }
+    .stats-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 16px 0; }
+
+    /* ── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .app { padding: 0 12px 60px; }
+      .header { padding: 24px 0 20px; }
+      .query-actions { flex-direction: column; align-items: stretch; }
+      #analyse-btn { text-align: center; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-badge">Evolutionary RAG</div>
+    <h1>EvoRAG Research Assistant</h1>
+    <p>Multi-persona AI synthesis with peer consensus voting — powered by local Ollama + FAISS</p>
+  </header>
+
+  <!-- ── Banners ─────────────────────────────────────────────────── -->
+  <div id="banner-error" class="banner banner-error" role="alert"></div>
+  <div id="banner-warn"  class="banner banner-warn"  role="alert"></div>
+
+  <!-- ── Section 1: Query ────────────────────────────────────────── -->
+  <section id="section-query">
+    <div class="section-title">Research Query</div>
+    <div class="card query-inner">
+      <textarea
+        id="query-input"
+        placeholder="Type a research question… e.g. Should AI be used in judicial judgment writing, and what are the risks?"
+        rows="4"
+        aria-label="Research query input"
+      ></textarea>
+
+      <div class="query-actions">
+        <button id="analyse-btn" aria-label="Analyse query">Analyse</button>
+        <div class="toggle-row">
+          <label for="toggle-personas">
+            <input type="checkbox" id="toggle-personas" checked /> Show persona responses
+          </label>
+          <label for="toggle-scores">
+            <input type="checkbox" id="toggle-scores" checked /> Show scores
+          </label>
+          <label for="toggle-sources">
+            <input type="checkbox" id="toggle-sources" checked /> Show sources
+          </label>
+        </div>
+      </div>
+
+      <div id="progress-wrap" aria-live="polite">
+        <div class="progress-track"><div class="progress-fill"></div></div>
+        <div id="progress-msg">Retrieving relevant context...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Section 2: Consensus ────────────────────────────────────── -->
+  <section id="section-consensus" aria-label="Consensus answer">
+    <div class="section-title">Synthesis Result</div>
+    <div class="card">
+      <div class="consensus-header">
+        <div class="consensus-header-left">
+          <h2>Consensus Answer</h2>
+          <div class="query-id" id="query-id-display"></div>
+        </div>
+      </div>
+      <div id="answer-text" title="Click to copy" role="button" tabindex="0" aria-label="Consensus answer — click to copy"></div>
+      <div class="top-personas-label">Top Personas</div>
+      <div id="top-personas-row"></div>
+    </div>
+  </section>
+
+  <!-- ── Section 3: Persona Breakdown ───────────────────────────── -->
+  <section id="section-personas" aria-label="Persona breakdown">
+    <div class="section-title">Persona Breakdown</div>
+    <div class="panels-grid">
+
+      <!-- Panel A -->
+      <div class="card" id="panel-a">
+        <div class="panel-title">Persona Responses</div>
+        <div id="persona-cards-grid"></div>
+      </div>
+
+      <!-- Panel B -->
+      <div class="card" id="panel-b">
+        <div class="panel-title">Score Matrix</div>
+        <div class="matrix-wrap">
+          <table id="score-matrix-table" aria-label="Peer scoring matrix"></table>
+        </div>
+      </div>
+
+      <!-- Panel C -->
+      <div class="card" id="panel-c">
+        <div class="panel-title">Sources</div>
+        <div class="source-list" id="source-list"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Section 4: Evolution ────────────────────────────────────── -->
+  <section id="section-evolution">
+    <div class="section-title">Persona Performance Over Time</div>
+    <div class="card">
+      <canvas id="chart-canvas" aria-label="Score evolution chart"></canvas>
+      <div class="stats-table-wrap">
+        <div id="stats-empty" class="stats-empty">Run a query to see performance stats.</div>
+        <table id="stats-table" style="display:none" aria-label="Session statistics">
+          <thead>
+            <tr>
+              <th>Persona</th>
+              <th>Queries Run</th>
+              <th>Avg Score</th>
+              <th>Best</th>
+              <th>Worst</th>
+              <th>Times in Top-K</th>
+            </tr>
+          </thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /.app -->
+
+<!-- ── Toast ────────────────────────────────────────────────────── -->
+<div id="toast" role="status" aria-live="polite">Copied!</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   CONSTANTS & STATE
+   ════════════════════════════════════════════════════════════════════ */
+const API_BASE = 'http://localhost:8000';
+
+const PERSONA_DISPLAY_NAMES = {
+  'analytical-critical':   'Analytical Critic',
+  'empirical-evidential':  'Empiricist',
+  'adversarial-skeptical': 'Skeptic',
+  'domain-expert':         'Domain Expert',
+  'synthesis-integrative': 'Synthesizer',
+  'temporal-contextual':   'Temporal Analyst',
+  'creative-lateral':      'Lateral Thinker',
+  'risk-evaluative':       'Risk Analyst',
+};
+
+const PERSONA_COLOR_PALETTE = [
+  '#6c63ff', '#ff6584', '#43e97b', '#f7971e',
+  '#4facfe', '#fa709a', '#a18cd1', '#fccb90'
+];
+
+const PROGRESS_MESSAGES = [
+  'Retrieving relevant context...',
+  'Generating 8 persona perspectives...',
+  'Running peer consensus voting...',
+  'Synthesising top responses...',
+];
+
+const state = {
+  isLoading:       false,
+  evolutionHistory: [],   // [{queryNumber, queryText, scores: {id: score}}]
+  currentResult:   null,
+  personaColors:   {},    // {persona_id: hex}
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   DOM REFS
+   ════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const qInput       = $('query-input');
+const analyseBtn   = $('analyse-btn');
+const progressWrap = $('progress-wrap');
+const progressMsg  = $('progress-msg');
+const bannerError  = $('banner-error');
+const bannerWarn   = $('banner-warn');
+const secConsensus = $('section-consensus');
+const secPersonas  = $('section-personas');
+const answerText   = $('answer-text');
+const qIdDisplay   = $('query-id-display');
+const topPersonRow = $('top-personas-row');
+const pcGrid       = $('persona-cards-grid');
+const matrixTable  = $('score-matrix-table');
+const sourceList   = $('source-list');
+const toast        = $('toast');
+const statsTable   = $('stats-table');
+const statsBody    = $('stats-body');
+const statsEmpty   = $('stats-empty');
+const togglePersonas = $('toggle-personas');
+const toggleScores   = $('toggle-scores');
+const toggleSources  = $('toggle-sources');
+
+/* ════════════════════════════════════════════════════════════════════
+   CHART SETUP
+   ════════════════════════════════════════════════════════════════════ */
+const ctx = $('chart-canvas').getContext('2d');
+const evolutionChart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true,
+    animation: { duration: 500 },
+    plugins: {
+      legend: {
+        labels: { color: '#7a7a9a', font: { size: 11 }, boxWidth: 12, padding: 16 }
+      },
+      title: {
+        display: true,
+        text: 'Persona Performance Over Time',
+        color: '#e8e8f0',
+        font: { size: 14, weight: '700' },
+        padding: { bottom: 16 }
+      },
+      tooltip: {
+        backgroundColor: '#1a1a24',
+        borderColor: '#2e2e46',
+        borderWidth: 1,
+        titleColor: '#e8e8f0',
+        bodyColor: '#7a7a9a',
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks:  { color: '#7a7a9a', font: { size: 11 } },
+        grid:   { color: '#2e2e46' },
+        title:  { display: true, text: 'Query #', color: '#7a7a9a' }
+      },
+      y: {
+        min: 0,
+        max: 10,
+        ticks:  { color: '#7a7a9a', font: { size: 11 } },
+        grid:   { color: '#2e2e46' },
+        title:  { display: true, text: 'Avg Score', color: '#7a7a9a' }
+      }
+    }
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   UTILITIES
+   ════════════════════════════════════════════════════════════════════ */
+function personaDisplay(id) {
+  return PERSONA_DISPLAY_NAMES[id] || id;
+}
+
+function assignColors(personaIds) {
+  let palette = [...PERSONA_COLOR_PALETTE];
+  personaIds.forEach((id, i) => {
+    if (!state.personaColors[id]) {
+      state.personaColors[id] = palette[i % palette.length];
+    }
+  });
+}
+
+function scoreColor(score, max = 10) {
+  // red → yellow → green interpolation
+  const t = score / max;
+  if (t < 0.5) {
+    const r = 255, g = Math.round(t * 2 * 200);
+    return `rgba(${r},${g},80,0.25)`;
+  } else {
+    const r = Math.round((1 - (t - 0.5) * 2) * 200), g = 200;
+    return `rgba(${r},${g},80,0.25)`;
+  }
+}
+
+function showToast(msg = 'Copied!') {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+function showBanner(type, msg) {
+  if (type === 'error') {
+    bannerError.textContent = msg;
+    bannerError.classList.add('visible');
+    bannerWarn.classList.remove('visible');
+  } else {
+    bannerWarn.textContent = msg;
+    bannerWarn.classList.add('visible');
+    bannerError.classList.remove('visible');
+  }
+}
+
+function clearBanners() {
+  bannerError.classList.remove('visible');
+  bannerWarn.classList.remove('visible');
+}
+
+let progressInterval = null;
+function startProgress() {
+  progressWrap.classList.add('visible');
+  let i = 0;
+  progressMsg.textContent = PROGRESS_MESSAGES[0];
+  progressInterval = setInterval(() => {
+    i = (i + 1) % PROGRESS_MESSAGES.length;
+    progressMsg.textContent = PROGRESS_MESSAGES[i];
+  }, 4500);
+}
+function stopProgress() {
+  clearInterval(progressInterval);
+  progressWrap.classList.remove('visible');
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   RENDERING
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Section 2 — Consensus */
+function renderConsensus(data) {
+  const answer = data.final_answer || '';
+  answerText.textContent = answer;
+  qIdDisplay.textContent = data.query_id ? `Query ID: ${data.query_id}` : '';
+
+  topPersonRow.innerHTML = '';
+  const top = Array.isArray(data.top_personas) ? data.top_personas : [];
+  top.forEach(pid => {
+    const pill = document.createElement('span');
+    pill.className = 'persona-pill';
+    const col = state.personaColors[pid] || '#6c63ff';
+    pill.style.backgroundColor = col + '22';
+    pill.style.borderColor = col;
+    pill.style.color = col;
+    pill.textContent = personaDisplay(pid);
+    topPersonRow.appendChild(pill);
+  });
+
+  secConsensus.classList.add('visible');
+}
+
+/* Section 3 Panel A — Persona cards */
+function renderPersonaCards(data) {
+  const responses = data.all_responses || {};
+  const scores    = data.scores || {};
+  const top       = new Set(data.top_personas || []);
+
+  const allIds = Object.keys(responses);
+  const sorted = allIds.slice().sort((a, b) => (scores[b] || 0) - (scores[a] || 0));
+  const topThree = sorted.slice(0, 3);
+
+  pcGrid.innerHTML = '';
+  sorted.forEach(pid => {
+    const card = document.createElement('div');
+    card.className = 'persona-card';
+    if (topThree.includes(pid)) card.classList.add('top-3');
+
+    const rawScore = scores[pid];
+    const isDefault = (rawScore === undefined || rawScore === null);
+    if (isDefault) card.classList.add('dimmed');
+
+    const col = state.personaColors[pid] || '#6c63ff';
+    const displayScore = isDefault ? '?' : Number(rawScore).toFixed(1);
+    const fullText = responses[pid] || '';
+    const short = fullText.length > 150 ? fullText.slice(0, 150) + '…' : fullText;
+
+    card.innerHTML = `
+      <div class="pc-header">
+        <span class="pc-name" style="color:${col}">${personaDisplay(pid)}</span>
+        <span class="pc-score">${displayScore}/10</span>
+      </div>
+      <div class="pc-text" id="pc-text-${pid.replace(/[^a-z0-9]/gi, '_')}">${escHtml(short)}</div>
+    `;
+
+    if (fullText.length > 150) {
+      const btn = document.createElement('button');
+      btn.className = 'pc-readmore';
+      btn.textContent = 'Read more';
+      let expanded = false;
+      const textEl = card.querySelector('.pc-text');
+      btn.addEventListener('click', () => {
+        expanded = !expanded;
+        textEl.textContent = expanded ? fullText : short;
+        btn.textContent = expanded ? 'Show less' : 'Read more';
+      });
+      card.appendChild(btn);
+    }
+
+    pcGrid.appendChild(card);
+  });
+}
+
+/* Section 3 Panel B — Score matrix */
+function renderScoreMatrix(data) {
+  const matrix = data.score_matrix || [];
+  const allIds = Object.keys(data.all_responses || {});
+
+  matrixTable.innerHTML = '';
+
+  // Header row
+  const thead = matrixTable.createTHead();
+  const hr = thead.insertRow();
+  const cornerTh = document.createElement('th');
+  cornerTh.textContent = 'Scorer ↓ / Scored →';
+  hr.appendChild(cornerTh);
+  allIds.forEach(pid => {
+    const th = document.createElement('th');
+    th.textContent = personaDisplay(pid).split(' ')[0]; // short label
+    th.title = personaDisplay(pid);
+    hr.appendChild(th);
+  });
+
+  const tbody = matrixTable.createTBody();
+  matrix.forEach((row, ri) => {
+    const tr = tbody.insertRow();
+    const rowTh = document.createElement('th');
+    rowTh.textContent = personaDisplay(allIds[ri] || `P${ri}`).split(' ')[0];
+    rowTh.title = personaDisplay(allIds[ri] || '');
+    tr.appendChild(rowTh);
+
+    (Array.isArray(row) ? row : Object.values(row || {})).forEach((cell, ci) => {
+      const td = tr.insertCell();
+      if (ri === ci) {
+        td.textContent = '—';
+        td.className = 'self-cell';
+      } else {
+        const val = (cell === null || cell === undefined) ? '?' : Number(cell).toFixed(1);
+        td.textContent = val;
+        if (val !== '?') td.style.backgroundColor = scoreColor(Number(cell));
+        // Tooltip
+        const tip = document.createElement('span');
+        tip.className = 'matrix-tooltip';
+        const scorer = personaDisplay(allIds[ri] || `P${ri}`);
+        const scored = personaDisplay(allIds[ci] || `P${ci}`);
+        tip.textContent = `${scorer} scored ${scored}: ${val}/10`;
+        td.appendChild(tip);
+      }
+    });
+  });
+}
+
+/* Section 3 Panel C — Sources */
+function renderSources(data) {
+  const sources = (data.sources || []).slice().sort((a, b) => {
+    const sa = a.score ?? a.distance ?? Infinity;
+    const sb = b.score ?? b.distance ?? Infinity;
+    return sa - sb;
+  });
+
+  sourceList.innerHTML = '';
+  if (!sources.length) {
+    sourceList.innerHTML = '<p style="color:var(--muted);font-size:13px">No sources returned.</p>';
+    return;
+  }
+
+  sources.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'source-item';
+    const dist = s.score ?? s.distance;
+    const distStr = dist !== undefined ? Number(dist).toFixed(3) : 'N/A';
+    const url = s.url || '';
+    const titleHtml = url
+      ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(s.title || url)}</a>`
+      : escHtml(s.title || 'Untitled');
+
+    item.innerHTML = `
+      <div class="source-title">${titleHtml}</div>
+      <div class="source-meta">
+        <span class="source-tag">${escHtml(s.source || 'unknown')}</span>
+        <span class="source-score">L2 dist: ${distStr}</span>
+      </div>
+    `;
+    sourceList.appendChild(item);
+  });
+}
+
+/* Section 4 — Evolution chart & stats */
+function updateEvolutionChart(history) {
+  if (!history.length) return;
+
+  const allPersonas = Object.keys(PERSONA_DISPLAY_NAMES);
+  const labels = history.map(h => `Q${h.queryNumber}`);
+
+  const datasets = allPersonas.map((pid, i) => {
+    const col = state.personaColors[pid] || PERSONA_COLOR_PALETTE[i % PERSONA_COLOR_PALETTE.length];
+    return {
+      label: personaDisplay(pid),
+      data: history.map(h => {
+        const s = h.scores ? h.scores[pid] : undefined;
+        return s !== undefined && s !== null ? Number(s) : null;
+      }),
+      borderColor: col,
+      backgroundColor: col + '20',
+      pointBackgroundColor: col,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      tension: 0.35,
+      spanGaps: true,
+    };
+  });
+
+  evolutionChart.data.labels = labels;
+  evolutionChart.data.datasets = datasets;
+  evolutionChart.update();
+
+  updateStatsTable(history);
+}
+
+function updateStatsTable(history) {
+  const allPersonas = Object.keys(PERSONA_DISPLAY_NAMES);
+  const topPersonaSets = history.map(h => new Set(h.topPersonas || []));
+
+  statsBody.innerHTML = '';
+  allPersonas.forEach((pid, i) => {
+    const col = state.personaColors[pid] || PERSONA_COLOR_PALETTE[i % PERSONA_COLOR_PALETTE.length];
+    const vals = history.map(h => h.scores && h.scores[pid] !== undefined ? Number(h.scores[pid]) : null).filter(v => v !== null);
+    if (!vals.length) return;
+
+    const avg  = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const best = Math.max(...vals);
+    const worst= Math.min(...vals);
+    const inTopK = topPersonaSets.filter(s => s.has(pid)).length;
+
+    const tr = statsBody.insertRow();
+    tr.innerHTML = `
+      <td style="color:${col}">${personaDisplay(pid)}</td>
+      <td>${vals.length}</td>
+      <td>${avg.toFixed(2)}</td>
+      <td>${best.toFixed(1)}</td>
+      <td>${worst.toFixed(1)}</td>
+      <td>${inTopK}</td>
+    `;
+  });
+
+  statsTable.style.display = statsBody.children.length ? '' : 'none';
+  statsEmpty.style.display  = statsBody.children.length ? 'none' : '';
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MAIN QUERY HANDLER
+   ════════════════════════════════════════════════════════════════════ */
+async function runQuery() {
+  const queryText = qInput.value.trim();
+  if (!queryText || state.isLoading) return;
+
+  state.isLoading = true;
+  clearBanners();
+  analyseBtn.disabled = true;
+  analyseBtn.textContent = 'Analysing...';
+  analyseBtn.classList.add('loading');
+  startProgress();
+
+  try {
+    const response = await fetch(`${API_BASE}/query/consensus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: queryText }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`API returned HTTP ${response.status}: ${errText.slice(0, 300)}`);
+    }
+
+    const data = await response.json();
+
+    // Warn if any expected fields are missing
+    const required = ['final_answer', 'top_personas', 'query_id', 'sources', 'score_matrix', 'all_responses', 'scores'];
+    const missing  = required.filter(k => !(k in data));
+    if (missing.length) {
+      showBanner('warn', `Response incomplete — some sections may not display correctly. Missing: ${missing.join(', ')}`);
+    }
+
+    state.currentResult = data;
+
+    // Assign persona colors on first result
+    const personaIds = Object.keys(data.all_responses || {});
+    if (!Object.keys(state.personaColors).length) assignColors(personaIds);
+
+    // Section 2
+    renderConsensus(data);
+
+    // Section 3
+    const showPersonas = togglePersonas.checked;
+    const showScores   = toggleScores.checked;
+    const showSources  = toggleSources.checked;
+
+    if (showPersonas || showScores || showSources) {
+      if (showPersonas) renderPersonaCards(data);
+      if (showScores)   renderScoreMatrix(data);
+      if (showSources)  renderSources(data);
+
+      document.getElementById('panel-a').style.display = showPersonas ? '' : 'none';
+      document.getElementById('panel-b').style.display = showScores   ? '' : 'none';
+      document.getElementById('panel-c').style.display = showSources  ? '' : 'none';
+      secPersonas.classList.add('visible');
+    } else {
+      secPersonas.classList.remove('visible');
+    }
+
+    // Section 4 — evolution
+    state.evolutionHistory.push({
+      queryNumber: state.evolutionHistory.length + 1,
+      queryText,
+      scores: data.scores || {},
+      topPersonas: data.top_personas || [],
+    });
+    updateEvolutionChart(state.evolutionHistory);
+
+  } catch (err) {
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      showBanner('error', 'Could not reach the API. Make sure api.py is running on port 8000.');
+    } else {
+      showBanner('error', `Error: ${err.message}`);
+    }
+  } finally {
+    state.isLoading = false;
+    analyseBtn.disabled = false;
+    analyseBtn.textContent = 'Analyse';
+    analyseBtn.classList.remove('loading');
+    stopProgress();
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   EVENT WIRING
+   ════════════════════════════════════════════════════════════════════ */
+
+// Analyse button
+analyseBtn.addEventListener('click', runQuery);
+
+// Enter key (Ctrl/Cmd+Enter in textarea)
+qInput.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runQuery();
+});
+
+// Copy answer on click
+answerText.addEventListener('click', () => {
+  const text = answerText.textContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => showToast('Select + copy manually'));
+});
+answerText.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') answerText.click();
+});
+
+// Toggle visibility
+function applyToggle() {
+  if (!state.currentResult) return;
+  const sp = togglePersonas.checked, ss = toggleScores.checked, src = toggleSources.checked;
+  document.getElementById('panel-a').style.display = sp  ? '' : 'none';
+  document.getElementById('panel-b').style.display = ss  ? '' : 'none';
+  document.getElementById('panel-c').style.display = src ? '' : 'none';
+  secPersonas.classList.toggle('visible', sp || ss || src);
+}
+togglePersonas.addEventListener('change', applyToggle);
+toggleScores.addEventListener('change',   applyToggle);
+toggleSources.addEventListener('change',  applyToggle);
+</script>
+</body>
+</html>

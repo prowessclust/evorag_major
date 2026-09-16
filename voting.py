@@ -1,10 +1,9 @@
 """Peer scoring and consensus score computation for EvoRAG."""
 
-import asyncio
 import logging
 from typing import Any, Optional
 
-from config import PERSONAS, PERSONA_TIMEOUT_SECONDS
+from config import PERSONAS, PERSONA_TIMEOUT_SECONDS, SCORING_TIMEOUT_SECONDS
 from utils import call_ollama_async, safe_json_loads
 
 log = logging.getLogger(__name__)
@@ -20,11 +19,31 @@ def _persona_name_by_id() -> dict[str, str]:
     return {p["id"]: p["name"] for p in PERSONAS}
 
 
+# Max words per persona response included in the scoring prompt.
+# phi3:mini has a 4K token context window; 8 full responses (~10K chars) exceed it.
+# 200 words per response keeps the total prompt well within the window.
+_SCORING_RESPONSE_MAX_WORDS = 200
+
+
+def _truncate_response(text: Optional[str], max_words: int = _SCORING_RESPONSE_MAX_WORDS) -> str:
+    """Truncate a persona response to max_words for the scoring prompt."""
+    if not text:
+        return "[No response]"
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]) + " [truncated]"
+
+
 def _format_responses(responses: dict[str, Optional[str]]) -> str:
-    """Format persona responses for the peer scoring prompt."""
+    """Format persona responses for the peer scoring prompt.
+
+    Each response is truncated to _SCORING_RESPONSE_MAX_WORDS so the total
+    prompt stays within phi3's 4K token context window.
+    """
     blocks = []
     for persona_id, response in responses.items():
-        blocks.append(f"{persona_id}:\n{response or '[No response]'}")
+        blocks.append(f"{persona_id}:\n{_truncate_response(response)}")
     return "\n\n".join(blocks)
 
 
@@ -35,6 +54,16 @@ def build_scoring_prompt(
 ) -> str:
     """Build the JSON-only prompt a persona uses to score peer responses."""
     names = _persona_name_by_id()
+    # Build a full skeleton so the LLM knows every key it must return.
+    skeleton_parts = []
+    for pid in responses:
+        if pid == scorer_id:
+            skeleton_parts.append(f'    "{pid}": null')
+        else:
+            skeleton_parts.append(
+                f'    "{pid}": {{"factual_grounding": <0-10>, "reasoning_quality": <0-10>, "completeness": <0-10>}}'
+            )
+    skeleton = "{\n  \"scores\": {\n" + ",\n".join(skeleton_parts) + "\n  }\n}"
     return f"""You are {names.get(scorer_id, scorer_id)}.
 
 Below are responses to the question: "{query}"
@@ -44,17 +73,13 @@ Score each response EXCEPT YOUR OWN on three dimensions from 0 to 10:
 - reasoning_quality: Is the logic coherent and well-structured?
 - completeness: Does it address what the question actually needs?
 
-Your own response is labeled {scorer_id}. Do NOT score it; set it to null.
+Your own response is labeled "{scorer_id}". Set its entry to null.
 
 Responses:
 {_format_responses(responses)}
 
-Return ONLY a valid JSON object in this format:
-{{
-  "scores": {{
-    "{scorer_id}": null
-  }}
-}}"""
+Return ONLY valid JSON. No prose, no markdown, no code fences. Fill in numeric scores:
+{skeleton}"""
 
 
 def _coerce_score(value: Any) -> Optional[Score]:
@@ -78,7 +103,12 @@ async def score_as_persona(
 ) -> dict[str, Optional[Score]]:
     """Ask one persona to score all peer responses."""
     prompt = build_scoring_prompt(scorer_id, query, responses)
-    raw = await call_ollama_async(prompt, timeout_seconds=PERSONA_TIMEOUT_SECONDS)
+    # Fix 3: scoring prompts are 3-4× longer than generation prompts — use dedicated timeout
+    raw = await call_ollama_async(prompt, timeout_seconds=SCORING_TIMEOUT_SECONDS)
+
+    # ── Diagnostic: log raw LLM output BEFORE any parsing ─────────────────────
+    log.info("[%s] RAW SCORING OUTPUT:\n%s", scorer_id, raw)
+
     parsed = safe_json_loads(raw)
     scores = parsed.get("scores") if parsed else None
     row: dict[str, Optional[Score]] = {pid: None for pid in responses}
@@ -99,12 +129,28 @@ async def build_score_matrix(
     query: str,
     responses: dict[str, Optional[str]],
 ) -> ScoreMatrix:
-    """Run all peer scoring calls in parallel and return an 8x8-style matrix."""
+    """Run all peer scoring calls sequentially and return an 8x8-style matrix.
+
+    IMPORTANT: calls are serialised (not parallelised with asyncio.gather) because
+    Ollama on CPU is compute-bound and cannot serve concurrent requests.  Firing all
+    8 calls simultaneously overloads Ollama, causes all requests to fail, and
+    produces an all-zero score matrix that breaks Phase 5 peer evaluation.
+    Sequential execution mirrors the persona generation pattern in personas.py.
+    """
+    import time as _time
     scorer_ids = list(responses.keys())
-    rows = await asyncio.gather(
-        *[score_as_persona(scorer_id, query, responses) for scorer_id in scorer_ids]
-    )
-    return {scorer_id: row for scorer_id, row in zip(scorer_ids, rows)}
+    matrix: ScoreMatrix = {}
+    for scorer_id in scorer_ids:
+        t0 = _time.time()
+        log.info("[SCORING] %s scoring peers...", scorer_id)
+        row = await score_as_persona(scorer_id, query, responses)
+        elapsed = round(_time.time() - t0, 1)
+        valid_scores = sum(1 for v in row.values() if v is not None)
+        log.info("[SCORING] %s done in %ss — %d/%d valid scores",
+                 scorer_id, elapsed, valid_scores, len(row) - 1)
+        matrix[scorer_id] = row
+    log.info("SCORE MATRIX:\n%s", matrix)
+    return matrix
 
 
 def compute_final_scores(score_matrix: ScoreMatrix) -> dict[str, float]:
@@ -139,12 +185,22 @@ def summarize_received_scores(score_matrix: ScoreMatrix) -> dict[str, dict[str, 
             for dimension in DIMENSIONS:
                 dimension_values[dimension].append(score[dimension])
 
+        avg = round(sum(composites) / len(composites), 4) if composites else 0.0
+        dims = {
+            dimension: round(sum(values) / len(values), 4) if values else 0.0
+            for dimension, values in dimension_values.items()
+        }
+        # Fix 5: log aggregated values before persistence — proves path is reached
+        log.info(
+            "AGGREGATED %s avg=%s votes=%s dimensions=%s",
+            target_id,
+            avg,
+            [round(v, 4) for v in composites],
+            dims,
+        )
         summaries[target_id] = {
-            "avg_score": round(sum(composites) / len(composites), 4) if composites else 0.0,
+            "avg_score": avg,
             "scores_received": [round(value, 4) for value in composites],
-            "dimensions": {
-                dimension: round(sum(values) / len(values), 4) if values else 0.0
-                for dimension, values in dimension_values.items()
-            },
+            "dimensions": dims,
         }
     return summaries

@@ -11,3 +11,6 @@ dist/
 build/
 *.db
 score_store.json
+score_store2.json
+persona_evolution/persona_versions.json
+*.log

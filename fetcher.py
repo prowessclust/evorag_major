@@ -332,10 +332,19 @@ def _chunk_text(text: str) -> List[str]:
     return chunks
 
 
+# Maximum chunks taken from any single article (identified by url_hash)
+MAX_CHUNKS_PER_ARTICLE = 4
+
+
 def _build_chunks(articles: List[Dict]) -> List[Dict]:
-    """Turn cleaned articles into chunk records with full metadata."""
+    """Turn cleaned articles into chunk records with full metadata.
+
+    Applies a per-article chunk cap (MAX_CHUNKS_PER_ARTICLE) so that no single
+    article can dominate the retrieval corpus.
+    """
     all_chunks = []
     chunk_id_counter = 0
+    articles_capped = 0  # how many articles hit the cap
 
     for article in articles:
         text = article.get("clean_text", "")
@@ -345,7 +354,16 @@ def _build_chunks(articles: List[Dict]) -> List[Dict]:
         raw_chunks = _chunk_text(text)
         total = len(raw_chunks)
 
-        for idx, chunk_text in enumerate(raw_chunks):
+        # Apply per-article cap
+        if total > MAX_CHUNKS_PER_ARTICLE:
+            articles_capped += 1
+            log.debug(
+                f"Cap applied to '{article['title'][:60]}': "
+                f"{total} chunks → {MAX_CHUNKS_PER_ARTICLE}"
+            )
+        capped_chunks = raw_chunks[:MAX_CHUNKS_PER_ARTICLE]
+
+        for idx, chunk_text in enumerate(capped_chunks):
             word_count = len(chunk_text.split())
             all_chunks.append({
                 "chunk_id":     chunk_id_counter,
@@ -355,15 +373,17 @@ def _build_chunks(articles: List[Dict]) -> List[Dict]:
                 "title":        article["title"],
                 "published_at": article["published_at"],
                 "chunk_index":  idx,
-                "total_chunks": total,
+                "total_chunks": min(total, MAX_CHUNKS_PER_ARTICLE),
                 "word_count":   word_count,
                 "text":         chunk_text,
             })
             chunk_id_counter += 1
 
-    log.info(f"Chunking: produced {len(all_chunks)} chunks from "
-             f"{len(articles)} articles.")
-    return all_chunks
+    log.info(
+        f"Chunking: produced {len(all_chunks)} chunks from {len(articles)} articles "
+        f"(cap={MAX_CHUNKS_PER_ARTICLE}, articles capped: {articles_capped})."
+    )
+    return all_chunks, articles_capped
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -392,7 +412,7 @@ def fetch(query: str, max_per_source: int = MAX_ARTICLES_PER_SOURCE) -> List[Dic
         1. Fetch from NewsAPI, GNews, RSS in parallel (sequential for simplicity here)
         2. Clean text
         3. Deduplicate by URL hash
-        4. Chunk with sliding window
+        4. Chunk with sliding window (with per-article cap)
         5. Write to disk (rotating to keep ≤ MAX_CHUNK_FILES)
         6. Return chunk list in memory
 
@@ -423,12 +443,22 @@ def fetch(query: str, max_per_source: int = MAX_ARTICLES_PER_SOURCE) -> List[Dic
     # --- Step 3: Deduplicate ---
     unique_articles = _deduplicate(viable)
 
-    # --- Step 4: Chunk ---
-    chunks = _build_chunks(unique_articles)
+    # --- Step 4: Chunk (with per-article cap) ---
+    chunks, articles_capped = _build_chunks(unique_articles)
 
     if not chunks:
         log.warning("Produced zero chunks. Articles may be too short after cleaning.")
         return []
+
+    # --- Print cap summary ---
+    sources: Dict[str, int] = {}
+    for c in chunks:
+        sources[c["source"]] = sources.get(c["source"], 0) + 1
+    print(f"[OK] Chunk cap applied: max {MAX_CHUNKS_PER_ARTICLE} chunks per article")
+    print(f"[OK] Articles affected by cap: {articles_capped}")
+    print(f"[OK] Total chunks after cap: {len(chunks)}")
+    by_source = ", ".join(f"{src}={cnt}" for src, cnt in sorted(sources.items()))
+    print(f"[OK] By source: {by_source}")
 
     # --- Step 5: Write to disk ---
     _rotate_data_files()

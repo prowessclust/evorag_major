@@ -21,6 +21,15 @@ def select_top_personas(
         if response and response.strip()
     ]
     ranked = sorted(eligible, key=lambda persona_id: final_scores.get(persona_id, 0.0), reverse=True)
+
+    # Fix 6: detect degenerate case where all scoring calls failed
+    if eligible and all(final_scores.get(pid, 0.0) == 0.0 for pid in eligible):
+        log.warning(
+            "ALL PEER SCORES ARE ZERO — scoring stage produced no valid votes. "
+            "Winner selection is falling back to config insertion order, NOT genuine ranking. "
+            "Check api_debug.log for RAW SCORING OUTPUT to diagnose the scoring failure."
+        )
+
     return ranked[:k]
 
 

@@ -16,7 +16,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,7 @@ from embedder import load_index
 from retriever import answer_async
 from personas import run_all_personas
 from pipeline import evorag_query
+import personas as personas_module  # kept as module ref for evolution system
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,6 +140,68 @@ class ConsensusQueryResponse(BaseModel):
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+# ── Evolution check (background, never blocks a response) ────────────────────
+async def _run_evolution_check() -> None:
+    """Evaluate persona performance and trigger a replacement if warranted.
+
+    Always called as a BackgroundTask after /query/consensus completes so it
+    adds ZERO latency to the user-facing response.
+    """
+    from persona_evolution.tracker import load_score_history, compute_rolling_averages, MIN_QUERIES_BEFORE_EVAL
+    from persona_evolution.detector import detect_underperformers, should_trigger_replacement, MIN_QUERIES_BEFORE_REPLACE
+    from persona_evolution.mutator import generate_replacement_persona
+    from persona_evolution.replacer import execute_replacement
+
+    history = load_score_history()
+    total = len(history)
+
+    if total < MIN_QUERIES_BEFORE_REPLACE:
+        log.info(
+            "[EVOLUTION] Skipping check — only %d queries in history (need %d).",
+            total, MIN_QUERIES_BEFORE_REPLACE,
+        )
+        return
+
+    averages = compute_rolling_averages(history)
+    underperformers = detect_underperformers(averages)
+
+    if not should_trigger_replacement(underperformers):
+        return
+
+    # Always replace the WORST performer (lowest avg_score) if multiple qualify
+    worst = min(underperformers, key=lambda x: x["avg_score"])
+    pid = worst["persona_id"]
+
+    # Find the current prompt for the weak persona
+    old_entry = next((p for p in personas_module.PERSONAS if p["id"] == pid), None)
+    if old_entry is None:
+        log.warning("[EVOLUTION] Persona '%s' flagged but not in active list — skipping.", pid)
+        return
+
+    try:
+        candidate = generate_replacement_persona(
+            weak_persona_id=pid,
+            weak_persona_prompt=old_entry.get("system_prompt", ""),
+            existing_persona_ids=[p["id"] for p in personas_module.PERSONAS],
+        )
+        event = execute_replacement(
+            weak_persona_id=pid,
+            candidate=candidate,
+            reason=worst["reason"],
+            personas_module=personas_module,
+            logger=log,
+        )
+        # Annotate the event with stats for the record
+        event["avg_score_at_replacement"] = worst["avg_score"]
+        event["queries_evaluated"] = worst["query_count"]
+        log.info(
+            "[EVOLUTION] Replacement complete: '%s' → '%s' (v%d) avg_score=%.2f",
+            pid, candidate["persona_id"], event["version"], worst["avg_score"],
+        )
+    except Exception as exc:
+        log.error("[EVOLUTION] Replacement failed for '%s': %s", pid, exc)
+
 
 @app.get("/health", summary="Health check")
 async def health():
@@ -256,13 +319,14 @@ async def personas_endpoint(req: PersonaQueryRequest):
 
 
 @app.post("/query/consensus", response_model=ConsensusQueryResponse, summary="EvoRAG consensus query")
-async def consensus_endpoint(req: ConsensusQueryRequest):
+async def consensus_endpoint(req: ConsensusQueryRequest, background_tasks: BackgroundTasks):
     """
     Phase 5 — Consensus Voting:
       1. Run all 8 personas on shared retrieved context
       2. Ask personas to score peer responses
       3. Select the top 3 personas by peer score
       4. Synthesize a final answer and append score_store.json
+      5. Trigger evolutionary persona check in background (zero latency)
     """
     if _state.get("index") is None:
         raise HTTPException(status_code=503, detail="Index not loaded.")
@@ -277,7 +341,94 @@ async def consensus_endpoint(req: ConsensusQueryRequest):
         log.exception("Unexpected error during consensus processing")
         raise HTTPException(status_code=500, detail=f"Internal error: {e}")
 
+    # Run evolution check AFTER the response is built — adds zero latency
+    background_tasks.add_task(_run_evolution_check)
+
     return ConsensusQueryResponse(**result)
+
+
+@app.get("/persona/status", summary="Persona health and replacement history")
+async def persona_status():
+    """Return current persona health, rolling scores, and full replacement history.
+
+    Response fields:
+    - ``active_personas``: list of persona status dicts (healthy/at_risk/replaced).
+    - ``replacement_history``: list of past replacement events.
+    - ``total_replacements``: count of all replacements this session.
+    - ``queries_since_last_replacement``: queries run after the last replacement.
+    """
+    from persona_evolution.tracker import load_score_history, compute_rolling_averages
+    from persona_evolution.detector import REPLACEMENT_THRESHOLD, MIN_QUERIES_BEFORE_REPLACE
+    from persona_evolution.replacer import load_persona_versions
+
+    history    = load_score_history()
+    averages   = compute_rolling_averages(history)
+    versions   = load_persona_versions()
+    replacements = versions.get("replacements", [])
+    total_replacements = len(replacements)
+
+    # Queries since last replacement
+    if replacements:
+        last_ts  = replacements[-1].get("timestamp", "")
+        # Count entries newer than that timestamp
+        queries_since = sum(
+            1 for e in history
+            if e.get("timestamp", "") > last_ts
+        )
+    else:
+        queries_since = len(history)
+
+    # Build per-persona status
+    active_personas = []
+    for persona in personas_module.PERSONAS:
+        pid   = persona["id"]
+        name  = persona["name"]
+        stats = averages.get(pid, {})
+        avg   = stats.get("avg_score", None)
+        count = stats.get("query_count", 0)
+        top_k = stats.get("times_in_top_k", 0)
+        top_k_rate = round(top_k / count, 4) if count else 0.0
+
+        if avg is None:
+            status = "healthy"  # not enough data to evaluate
+        elif avg < REPLACEMENT_THRESHOLD and count >= MIN_QUERIES_BEFORE_REPLACE:
+            status = "at_risk"
+        else:
+            status = "healthy"
+
+        # Calculate version number (how many times this slot has been replaced)
+        slot_version = sum(
+            1 for r in replacements
+            if r.get("replacement_persona_id") == pid
+        )
+
+        active_personas.append({
+            "id":          pid,
+            "display_name": name,
+            "avg_score":   avg,
+            "query_count": count,
+            "top_k_rate":  top_k_rate,
+            "status":      status,
+            "version":     slot_version,
+        })
+
+    history_summary = [
+        {
+            "version":     r.get("version"),
+            "timestamp":   r.get("timestamp"),
+            "replaced":    r.get("replaced_persona_id"),
+            "replacement": r.get("replacement_persona_id"),
+            "reason":      r.get("reason"),
+        }
+        for r in replacements
+    ]
+
+    return {
+        "active_personas":               active_personas,
+        "replacement_history":           history_summary,
+        "total_replacements":            total_replacements,
+        "queries_since_last_replacement": queries_since,
+    }
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

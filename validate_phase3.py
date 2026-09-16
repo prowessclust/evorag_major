@@ -58,14 +58,14 @@ model_name = health.get("model", "?")
 ok(f"Health check passed — {n_vectors} vectors in index, model: {model_name}")
 
 # ── Step 2: POST /query ───────────────────────────────────────────────────────
-print("\n[...] POST /query — 'What are the latest AI developments?'")
+print("\n[...] POST /query — 'What is the key to a successful AI strategy according to recent reports?'")
 print("      phi3 on CPU is slow — this may take 60–120 seconds. Please wait...\n")
 
 try:
     with httpx.Client(timeout=300) as client:
         resp = client.post(
             f"{API_URL}/query",
-            json={"query": "What are the latest AI developments?", "top_k": 2},
+            json={"query": "What is the key to a successful AI strategy according to recent reports?", "top_k": 2},
         )
 except httpx.ReadTimeout:
     fail(
@@ -106,12 +106,12 @@ if len({source_key(s) for s in data["sources"]}) != len(data["sources"]):
 ok("Source list contains unique article titles.")
 
 # ── Step 4: Second query ──────────────────────────────────────────────────────
-print("\n[...] POST /query — 'What is happening with global markets?'")
+print("\n[...] POST /query — 'Why are stocks and oil prices changing amid tensions between the US and Iran?'")
 try:
     with httpx.Client(timeout=300) as client:
         resp2 = client.post(
             f"{API_URL}/query",
-            json={"query": "What is happening with global markets?", "top_k": 2},
+            json={"query": "Why are stocks and oil prices changing amid tensions between the US and Iran?", "top_k": 2},
         )
 except httpx.ReadTimeout:
     fail("Second query timed out after 300 seconds.")

@@ -31,6 +31,14 @@ from typing import List, Dict, Tuple, Optional
 os.environ.setdefault("USE_TF", "0")
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
+# Skip the HuggingFace Hub network check on every model load.
+# Without this the library retries a HEAD request to huggingface.co up to 5 times
+# with exponential back-off (1+2+4+8+8 = 23 s of waiting) before falling back to
+# the local cache — adding ~32 s of dead time before every consensus query.
+# The model is already cached locally; offline mode loads it instantly.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -366,6 +374,8 @@ def main():
         print(f"     Vectors : {faiss.read_index(str(FAISS_INDEX_FILE)).ntotal}")
         print(f"     Index   : {FAISS_INDEX_FILE}")
         print(f"     Metadata: {META_FILE}")
+        print("\n[!] IMPORTANT: Restart api.py now to load the new index into memory.")
+        print("    Health check will show old vector count until the API is restarted.\n")
 
     elif args.query:
         results = query(args.query, top_k=args.top_k)

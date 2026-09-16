@@ -18,6 +18,7 @@ import httpx
 
 from config import (
     OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
     OLLAMA_MODEL,
     RETRIEVAL_TOP_K,
     RETRIEVAL_CANDIDATE_MULTIPLIER,
@@ -258,6 +259,7 @@ def ask_ollama(prompt: str, model: str = OLLAMA_MODEL) -> str:
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
     }
     log.info(f"Calling Ollama ({model}) — prompt length: {len(prompt)} chars")
     try:
@@ -295,6 +297,7 @@ async def ask_ollama_async(prompt: str, model: str = OLLAMA_MODEL) -> str:
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
     }
     # Use PERSONA_TIMEOUT_SECONDS (+10 s grace) so the httpx socket deadline
     # is always slightly longer than the asyncio.wait_for deadline in

@@ -88,7 +88,8 @@ if resp.status_code != 200:
 ok(f"Health check passed — {resp.json().get('index_vectors')} vectors in index")
 
 # ── Step 2: POST /query/personas ──────────────────────────────────────────────
-query = "What are the latest developments in artificial intelligence?"
+PHASE4_QUERY = "Why are AI agents starting to act like family members, and what does that reveal about human psychology?"
+query = PHASE4_QUERY
 print(f"\n[...] POST /query/personas")
 print(f"      Query   : '{query}'")
 print(f"      Personas: {persona_ids or 'all 8'}")

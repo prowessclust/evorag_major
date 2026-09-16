@@ -61,7 +61,12 @@ TOP_K_DEFAULT    = 5                           # default retrieval count
 
 # ── Phase 3 — Retrieval Pipeline + FastAPI ────────────────────────────────
 OLLAMA_BASE_URL  = "http://localhost:11434"   # default Ollama address
-OLLAMA_MODEL     = "phi3:latest"              # confirmed model
+OLLAMA_MODEL     = "phi3:mini"               # was: phi3:latest — 3-5x faster on CPU
+# Keeps the model resident in Ollama for the whole consensus run (17 sequential
+# calls). Without this, Ollama's default 5-min idle unload can evict the model
+# between calls, forcing an expensive reload or leaving the server unresponsive
+# mid-pipeline — observed as every scoring call failing right after generation.
+OLLAMA_KEEP_ALIVE = "30m"
 API_HOST         = "0.0.0.0"
 API_PORT         = 8000
 RETRIEVAL_TOP_K  = 5                          # chunks fed into prompt
@@ -69,7 +74,10 @@ RETRIEVAL_CANDIDATE_MULTIPLIER = 6            # over-fetch before deduplication
 RETRIEVAL_MIN_CANDIDATES = 20                 # minimum candidate pool size
 
 # ── Phase 4 — Multi-Persona Engine ───────────────────────────────────────────
-PERSONA_TIMEOUT_SECONDS = 180
+PERSONA_TIMEOUT_SECONDS = 300  # was: 180 — raised because complex queries (e.g. judicial AI) cause
+                               # personas to generate 2,500-3,000 char responses taking 180-270s on CPU.
+                               # 300s matches SCORING_TIMEOUT_SECONDS and prevents mid-pipeline timeouts.
+SCORING_TIMEOUT_SECONDS = 300   # Scoring prompts are 3-4× longer; needs extra headroom
 OLLAMA_MAX_CONCURRENT = 1   # serialize Ollama calls to avoid CPU overload empties
 CONSENSUS_TOP_K = 3
 SCORE_STORE_FILE = ROOT_DIR / "score_store.json"

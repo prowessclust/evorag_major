@@ -45,17 +45,21 @@ if resp.status_code != 200:
 ok(f"Health check passed - {resp.json().get('index_vectors')} vectors in index")
 
 before_size = SCORE_STORE.stat().st_size if SCORE_STORE.exists() else 0
-query = "What are the latest developments in artificial intelligence?"
+PHASE5_QUERY = "Should AI be used in judicial judgment writing, and what are the risks of doing so?"
+query = PHASE5_QUERY
+
+CONSENSUS_TIMEOUT_SECONDS = 1800  # 30 minutes — covers worst-case 17 calls × 120s on CPU
 
 print("\n[...] POST /query/consensus")
 print(f"      Query: {query}")
-print("      This can take several minutes on CPU because it runs generation, voting, and synthesis.\n")
+print("      This can take up to 30 minutes on CPU (17 LLM calls).")
+print("      Do not interrupt. Progress is logged in api.py terminal.\n")
 
 try:
-    with httpx.Client(timeout=900) as client:
+    with httpx.Client(timeout=CONSENSUS_TIMEOUT_SECONDS) as client:
         resp = client.post(f"{API_URL}/query/consensus", json={"query": query, "top_k": 2})
 except httpx.ReadTimeout:
-    fail("Consensus query timed out after 15 minutes.")
+    fail(f"Consensus query timed out after {CONSENSUS_TIMEOUT_SECONDS // 60} minutes.")
 
 if resp.status_code != 200:
     fail(f"/query/consensus returned HTTP {resp.status_code}: {resp.text}")
