@@ -35,7 +35,36 @@
       color: var(--text);
       min-height: 100vh;
       line-height: 1.65;
+      position: relative;
+      overflow-x: hidden;
     }
+
+    /* ── Ambient background — fixed mesh glow behind everything ───────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(600px circle at 12% -5%,  rgba(108,99,255,.18), transparent 60%),
+        radial-gradient(500px circle at 100% 15%, rgba(139,133,255,.12), transparent 55%),
+        radial-gradient(700px circle at 50% 110%, rgba(67,233,123,.07), transparent 60%);
+      animation: drift 22s ease-in-out infinite alternate;
+    }
+    @keyframes drift {
+      0%   { transform: translate3d(0,0,0) scale(1); }
+      100% { transform: translate3d(0,-18px,0) scale(1.04); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body::before { animation: none; }
+    }
+
+    /* ── Reveal-on-render animation ────────────────────────────────── */
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .reveal { animation: riseIn .45s cubic-bezier(.16,1,.3,1) both; }
 
     a { color: var(--accent2); text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -65,6 +94,12 @@
       padding: 4px 14px;
       border-radius: 100px;
       margin-bottom: 16px;
+      box-shadow: 0 0 24px rgba(108,99,255,.5);
+      animation: badgeGlow 3s ease-in-out infinite;
+    }
+    @keyframes badgeGlow {
+      0%, 100% { box-shadow: 0 0 18px rgba(108,99,255,.4); }
+      50%      { box-shadow: 0 0 30px rgba(108,99,255,.7); }
     }
     .header h1 {
       font-size: clamp(28px, 5vw, 48px);
@@ -121,6 +156,11 @@
       border-radius: var(--radius);
       padding: 24px;
       box-shadow: var(--shadow);
+      transition: border-color .25s, box-shadow .25s, transform .25s;
+    }
+    .card:hover {
+      border-color: rgba(108,99,255,.4);
+      box-shadow: 0 8px 32px rgba(0,0,0,.6), 0 0 0 1px rgba(108,99,255,.15);
     }
 
     /* ── Query section ──────────────────────────────────────────────── */
@@ -147,7 +187,7 @@
       transition: border-color .2s;
       outline: none;
     }
-    #query-input:focus { border-color: var(--accent); }
+    #query-input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(108,99,255,.15); }
     #query-input::placeholder { color: var(--muted); }
 
     .query-actions {
@@ -158,6 +198,8 @@
     }
 
     #analyse-btn {
+      position: relative;
+      overflow: hidden;
       background: linear-gradient(135deg, var(--accent), #8b85ff);
       border: none;
       border-radius: var(--radius-sm);
@@ -168,10 +210,21 @@
       font-weight: 700;
       padding: 12px 32px;
       letter-spacing: .3px;
-      transition: opacity .2s, transform .15s;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
       flex-shrink: 0;
+      box-shadow: 0 4px 20px rgba(108,99,255,.35);
     }
-    #analyse-btn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+    #analyse-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%);
+      transform: translateX(-120%);
+      transition: transform .6s;
+    }
+    #analyse-btn:hover:not(:disabled)::after { transform: translateX(120%); }
+    #analyse-btn:hover:not(:disabled) { opacity: .92; transform: translateY(-1px); box-shadow: 0 6px 26px rgba(108,99,255,.5); }
+    #analyse-btn:active:not(:disabled) { transform: translateY(0); }
     #analyse-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
     #analyse-btn.loading { animation: pulse-btn 1.4s ease-in-out infinite; }
 
@@ -231,6 +284,47 @@
       color: var(--muted);
       min-height: 18px;
     }
+    .progress-steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .step-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 5px 12px;
+      transition: color .3s, border-color .3s, background .3s;
+    }
+    .step-chip .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background .3s, box-shadow .3s;
+    }
+    .step-chip.active {
+      color: var(--accent2);
+      border-color: rgba(108,99,255,.4);
+      background: rgba(108,99,255,.08);
+    }
+    .step-chip.active .dot {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: dotPulse 1s ease-in-out infinite;
+    }
+    .step-chip.done { color: var(--success); }
+    .step-chip.done .dot { background: var(--success); box-shadow: none; animation: none; }
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%      { transform: scale(1.6); opacity: .5; }
+    }
 
     /* ── Banners ──────────────────────────────────────────────────── */
     .banner {
@@ -283,8 +377,14 @@
       padding: 12px;
       transition: background .15s;
       margin-bottom: 20px;
+      border-left: 3px solid var(--accent);
     }
     #answer-text:hover { background: rgba(108,99,255,.07); }
+    #answer-text p { margin-bottom: 12px; }
+    #answer-text p:last-child { margin-bottom: 0; }
+    #answer-text strong { color: #fff; font-weight: 700; }
+    #answer-text ul { margin: 8px 0 12px 22px; }
+    #answer-text li { margin-bottom: 6px; }
 
     /* Personas pills */
     .top-personas-label {
@@ -300,12 +400,25 @@
       gap: 8px;
     }
     .persona-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
       border-radius: 100px;
-      padding: 5px 14px;
+      padding: 5px 14px 5px 6px;
       font-size: 12px;
       font-weight: 600;
       letter-spacing: .3px;
       border: 1.5px solid transparent;
+    }
+    .pill-rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.15);
+      font-size: 10px;
+      font-weight: 800;
     }
 
     /* ── Toast ─────────────────────────────────────────────────────── */
@@ -362,8 +475,9 @@
       border-radius: var(--radius-sm);
       padding: 14px;
       position: relative;
-      transition: border-color .2s, box-shadow .2s;
+      transition: border-color .2s, box-shadow .2s, transform .2s;
     }
+    .persona-card:hover { transform: translateY(-2px); }
     .persona-card.top-3 {
       border-color: var(--accent);
       box-shadow: 0 0 0 1px var(--accent), 0 4px 20px rgba(108,99,255,.25);
@@ -376,11 +490,34 @@
       justify-content: space-between;
       margin-bottom: 8px;
     }
+    .pc-name-group { display: flex; align-items: center; gap: 8px; }
+    .pc-avatar {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+      font-weight: 800;
+      color: #fff;
+      flex-shrink: 0;
+    }
     .pc-name {
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .5px;
+    }
+    .pc-rank-badge {
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #a18cd1);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(108,99,255,.5);
     }
     .pc-score {
       font-size: 12px;
@@ -618,6 +755,7 @@
       <div id="progress-wrap" aria-live="polite">
         <div class="progress-track"><div class="progress-fill"></div></div>
         <div id="progress-msg">Retrieving relevant context...</div>
+        <div class="progress-steps" id="progress-steps"></div>
       </div>
     </div>
   </section>
@@ -694,7 +832,7 @@
   <!-- ── Section 5: Persona Health & Evolution ──────────────────── -->
   <section id="section-health">
     <div class="section-title">Persona Health &amp; Evolution Log</div>
-    <div class="card">
+    <div class="card" id="health-card">
       <div class="health-summary" id="health-summary"></div>
       <div class="health-grid" id="health-grid"></div>
       <div class="replacement-log-title" id="replacement-log-title" style="display:none">Replacement History</div>
@@ -876,44 +1014,109 @@ function clearBanners() {
 }
 
 let progressInterval = null;
+const progressStepsEl = $('progress-steps');
+
+function renderProgressSteps(activeIndex) {
+  progressStepsEl.innerHTML = '';
+  PROGRESS_MESSAGES.forEach((msg, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'step-chip';
+    if (i < activeIndex) chip.classList.add('done');
+    else if (i === activeIndex) chip.classList.add('active');
+    chip.innerHTML = `<span class="dot"></span><span>${escHtml(msg.replace(/\.\.\.$/, ''))}</span>`;
+    progressStepsEl.appendChild(chip);
+  });
+}
+
 function startProgress() {
   progressWrap.classList.add('visible');
   let i = 0;
   progressMsg.textContent = PROGRESS_MESSAGES[0];
+  renderProgressSteps(0);
   progressInterval = setInterval(() => {
-    i = (i + 1) % PROGRESS_MESSAGES.length;
+    i = Math.min(i + 1, PROGRESS_MESSAGES.length - 1);
     progressMsg.textContent = PROGRESS_MESSAGES[i];
-  }, 4500);
+    renderProgressSteps(i);
+  }, 8000);
 }
 function stopProgress() {
   clearInterval(progressInterval);
   progressWrap.classList.remove('visible');
+  renderProgressSteps(PROGRESS_MESSAGES.length); // mark all done for next run's flash
 }
 
 /* ════════════════════════════════════════════════════════════════════
    RENDERING
    ════════════════════════════════════════════════════════════════════ */
 
+/* Renders a small safe subset of Markdown (bold, bullet lists, paragraphs) —
+ * LLM answers routinely come back with **bold** and "* " bullets that look
+ * broken as literal text. Escapes HTML first so nothing in the model output
+ * can inject markup. */
+function renderMarkdownLite(raw) {
+  const text = escHtml(raw || '');
+  const lines = text.split('\n').map(l => l.trim());
+  const blocks = [];
+  let listBuf = [];
+
+  const flushList = () => {
+    if (listBuf.length) {
+      blocks.push('<ul>' + listBuf.map(li => `<li>${li}</li>`).join('') + '</ul>');
+      listBuf = [];
+    }
+  };
+
+  let paraBuf = [];
+  const flushPara = () => {
+    if (paraBuf.length) {
+      blocks.push(`<p>${paraBuf.join(' ')}</p>`);
+      paraBuf = [];
+    }
+  };
+
+  lines.forEach(line => {
+    if (!line) { flushPara(); flushList(); return; }
+    const bulletMatch = line.match(/^[*-]\s+(.*)/);
+    if (bulletMatch) {
+      flushPara();
+      listBuf.push(bulletMatch[1]);
+    } else {
+      flushList();
+      paraBuf.push(line);
+    }
+  });
+  flushPara();
+  flushList();
+
+  let html = blocks.join('');
+  // Bold: **text** — applied after structural HTML is built, so `<` from
+  // escHtml can't reopen a tag.
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return html || '<p></p>';
+}
+
 /* Section 2 — Consensus */
 function renderConsensus(data) {
   const answer = data.final_answer || '';
-  answerText.textContent = answer;
+  answerText.innerHTML = renderMarkdownLite(answer);
+  answerText.dataset.raw = answer;
   qIdDisplay.textContent = data.query_id ? `Query ID: ${data.query_id}` : '';
 
   topPersonRow.innerHTML = '';
   const top = Array.isArray(data.top_personas) ? data.top_personas : [];
-  top.forEach(pid => {
+  top.forEach((pid, i) => {
     const pill = document.createElement('span');
     pill.className = 'persona-pill';
     const col = state.personaColors[pid] || '#6c63ff';
     pill.style.backgroundColor = col + '22';
     pill.style.borderColor = col;
     pill.style.color = col;
-    pill.textContent = personaDisplay(pid);
+    pill.innerHTML = `<span class="pill-rank">${i + 1}</span>${escHtml(personaDisplay(pid))}`;
     topPersonRow.appendChild(pill);
   });
 
   secConsensus.classList.add('visible');
+  playReveal(secConsensus);
 }
 
 /* Section 3 Panel A — Persona cards */
@@ -927,10 +1130,11 @@ function renderPersonaCards(data) {
   const topThree = sorted.slice(0, 3);
 
   pcGrid.innerHTML = '';
-  sorted.forEach(pid => {
+  sorted.forEach((pid, rankIdx) => {
     const card = document.createElement('div');
     card.className = 'persona-card';
-    if (topThree.includes(pid)) card.classList.add('top-3');
+    const isTop3 = topThree.includes(pid);
+    if (isTop3) card.classList.add('top-3');
 
     const rawScore = scores[pid];
     const isDefault = (rawScore === undefined || rawScore === null);
@@ -940,10 +1144,15 @@ function renderPersonaCards(data) {
     const displayScore = isDefault ? '?' : Number(rawScore).toFixed(1);
     const fullText = responses[pid] || '';
     const short = fullText.length > 150 ? fullText.slice(0, 150) + '…' : fullText;
+    const initials = personaDisplay(pid).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
     card.innerHTML = `
+      ${isTop3 ? `<div class="pc-rank-badge">${rankIdx + 1}</div>` : ''}
       <div class="pc-header">
-        <span class="pc-name" style="color:${col}">${personaDisplay(pid)}</span>
+        <div class="pc-name-group">
+          <span class="pc-avatar" style="background:${col}">${initials}</span>
+          <span class="pc-name" style="color:${col}">${personaDisplay(pid)}</span>
+        </div>
         <span class="pc-score">${displayScore}/10</span>
       </div>
       <div class="pc-text" id="pc-text-${pid.replace(/[^a-z0-9]/gi, '_')}">${escHtml(short)}</div>
@@ -1155,6 +1364,7 @@ async function refreshPersonaHealth() {
 }
 
 function renderPersonaHealth(data) {
+  playReveal($('health-card'));
   const personas = data.active_personas || [];
   const replacements = data.replacement_history || [];
 
@@ -1206,6 +1416,12 @@ function renderPersonaHealth(data) {
     replacementLogTitle.style.display = 'none';
     replacementLog.innerHTML = '<span class="health-empty">No persona has been replaced yet.</span>';
   }
+}
+
+function playReveal(el) {
+  el.classList.remove('reveal');
+  void el.offsetWidth; // force reflow so the animation restarts on repeat queries
+  el.classList.add('reveal');
 }
 
 function escHtml(str) {
@@ -1278,6 +1494,7 @@ async function runQuery() {
       document.getElementById('panel-b').style.display = showScores   ? '' : 'none';
       document.getElementById('panel-c').style.display = showSources  ? '' : 'none';
       secPersonas.classList.add('visible');
+      playReveal(secPersonas);
     } else {
       secPersonas.classList.remove('visible');
     }
@@ -1323,7 +1540,7 @@ qInput.addEventListener('keydown', e => {
 
 // Copy answer on click
 answerText.addEventListener('click', () => {
-  const text = answerText.textContent;
+  const text = answerText.dataset.raw || answerText.textContent;
   if (!text) return;
   navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => showToast('Select + copy manually'));
 });
