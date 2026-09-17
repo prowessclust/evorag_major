@@ -13,4 +13,7 @@ build/
 score_store.json
 score_store2.json
 persona_evolution/persona_versions.json
+consensus_result*.json
+consensus_dummy.json
+api_server.log
 *.log
