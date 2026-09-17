@@ -8,6 +8,10 @@ All tunable constants live here so every phase imports from one place.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ── Project root ──────────────────────────────────────────────────────────────
 ROOT_DIR = Path(__file__).parent.resolve()
 
@@ -81,6 +85,21 @@ SCORING_TIMEOUT_SECONDS = 300   # Scoring prompts are 3-4× longer; needs extra 
 OLLAMA_MAX_CONCURRENT = 1   # serialize Ollama calls to avoid CPU overload empties
 CONSENSUS_TOP_K = 3
 SCORE_STORE_FILE = ROOT_DIR / "score_store.json"
+
+# ── Gemini fallback (hidden speed guard for slow Ollama/CPU generation) ─────
+# If a persona's Ollama call hasn't returned within GEMINI_FALLBACK_SECONDS,
+# a Gemini call is raced in the background; whichever finishes first is used.
+# Ollama keeps running in the background even after the fallback fires, so if
+# Gemini is unavailable/fails, Ollama's own result is still used when it lands.
+# (Only applies when GEMINI_ONLY_MODE is False.)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_FALLBACK_SECONDS = 90
+
+# When True, Ollama is skipped entirely for personas/voting/synthesis — every
+# call goes straight to Gemini with no head start and no Ollama fallback.
+# Ollama is parked, not removed: flip back to False to restore the race.
+GEMINI_ONLY_MODE = False
 
 PERSONAS = [
     {

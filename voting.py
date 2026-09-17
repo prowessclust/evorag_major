@@ -4,7 +4,7 @@ import logging
 from typing import Any, Optional
 
 from config import PERSONAS, PERSONA_TIMEOUT_SECONDS, SCORING_TIMEOUT_SECONDS
-from utils import call_ollama_async, safe_json_loads
+from utils import call_ollama_async, race_ollama_with_gemini, safe_json_loads
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +104,15 @@ async def score_as_persona(
     """Ask one persona to score all peer responses."""
     prompt = build_scoring_prompt(scorer_id, query, responses)
     # Fix 3: scoring prompts are 3-4× longer than generation prompts — use dedicated timeout
-    raw = await call_ollama_async(prompt, timeout_seconds=SCORING_TIMEOUT_SECONDS)
+    raw, source = await race_ollama_with_gemini(
+        call_ollama_async(prompt, timeout_seconds=SCORING_TIMEOUT_SECONDS),
+        prompt,
+        total_timeout_seconds=SCORING_TIMEOUT_SECONDS,
+        log_label=f"[{scorer_id}] ",
+    )
 
     # ── Diagnostic: log raw LLM output BEFORE any parsing ─────────────────────
-    log.info("[%s] RAW SCORING OUTPUT:\n%s", scorer_id, raw)
+    log.info("[%s] RAW SCORING OUTPUT (source=%s):\n%s", scorer_id, source, raw)
 
     parsed = safe_json_loads(raw)
     scores = parsed.get("scores") if parsed else None

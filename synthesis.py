@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from config import CONSENSUS_TOP_K, PERSONA_TIMEOUT_SECONDS
-from utils import call_ollama_async
+from utils import call_ollama_async, race_ollama_with_gemini
 
 log = logging.getLogger(__name__)
 
@@ -75,8 +75,14 @@ async def synthesize_top_k(
     if not top_personas:
         return "No persona produced enough information to synthesize a consensus answer."
     prompt = build_synthesis_prompt(query, top_personas, responses, final_scores)
-    answer = await call_ollama_async(prompt, timeout_seconds=PERSONA_TIMEOUT_SECONDS)
+    answer, source = await race_ollama_with_gemini(
+        call_ollama_async(prompt, timeout_seconds=PERSONA_TIMEOUT_SECONDS),
+        prompt,
+        total_timeout_seconds=PERSONA_TIMEOUT_SECONDS,
+        log_label="[synthesis] ",
+    )
     if answer:
+        log.info("[synthesis] Done (source=%s)", source)
         return answer
     log.warning("Synthesis call failed; falling back to highest-ranked persona response.")
     return responses.get(top_personas[0]) or ""

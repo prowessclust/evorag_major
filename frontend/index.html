@@ -856,9 +856,11 @@ function renderPersonaCards(data) {
   });
 }
 
-/* Section 3 Panel B — Score matrix */
+/* Section 3 Panel B — Score matrix
+ * data.score_matrix is {scorer_id: {target_id: {factual_grounding, reasoning_quality, completeness} | null}} —
+ * a dict keyed by persona id, not an array, and each cell is a 3-dimension score object, not a plain number. */
 function renderScoreMatrix(data) {
-  const matrix = data.score_matrix || [];
+  const matrix = data.score_matrix || {};
   const allIds = Object.keys(data.all_responses || {});
 
   matrixTable.innerHTML = '';
@@ -877,27 +879,31 @@ function renderScoreMatrix(data) {
   });
 
   const tbody = matrixTable.createTBody();
-  matrix.forEach((row, ri) => {
+  allIds.forEach((scorerId, ri) => {
     const tr = tbody.insertRow();
     const rowTh = document.createElement('th');
-    rowTh.textContent = personaDisplay(allIds[ri] || `P${ri}`).split(' ')[0];
-    rowTh.title = personaDisplay(allIds[ri] || '');
+    rowTh.textContent = personaDisplay(scorerId).split(' ')[0];
+    rowTh.title = personaDisplay(scorerId);
     tr.appendChild(rowTh);
 
-    (Array.isArray(row) ? row : Object.values(row || {})).forEach((cell, ci) => {
+    const row = matrix[scorerId] || {};
+    allIds.forEach((scoredId, ci) => {
+      const cellScore = row[scoredId]; // {factual_grounding, reasoning_quality, completeness} | null
       const td = tr.insertCell();
       if (ri === ci) {
         td.textContent = '—';
         td.className = 'self-cell';
       } else {
-        const val = (cell === null || cell === undefined) ? '?' : Number(cell).toFixed(1);
+        const dims = cellScore ? Object.values(cellScore) : null;
+        const composite = dims && dims.length ? dims.reduce((a, b) => a + b, 0) / dims.length : null;
+        const val = composite === null ? '?' : composite.toFixed(1);
         td.textContent = val;
-        if (val !== '?') td.style.backgroundColor = scoreColor(Number(cell));
+        if (val !== '?') td.style.backgroundColor = scoreColor(composite);
         // Tooltip
         const tip = document.createElement('span');
         tip.className = 'matrix-tooltip';
-        const scorer = personaDisplay(allIds[ri] || `P${ri}`);
-        const scored = personaDisplay(allIds[ci] || `P${ci}`);
+        const scorer = personaDisplay(scorerId);
+        const scored = personaDisplay(scoredId);
         tip.textContent = `${scorer} scored ${scored}: ${val}/10`;
         td.appendChild(tip);
       }

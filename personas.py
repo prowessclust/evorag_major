@@ -34,9 +34,13 @@ from config import (
     RETRIEVAL_TOP_K,
     PERSONA_TIMEOUT_SECONDS,
     OLLAMA_MAX_CONCURRENT,
+    GEMINI_API_KEY,
+    GEMINI_FALLBACK_SECONDS,
+    GEMINI_ONLY_MODE,
 )
 from embedder import release_model
 from retriever import retrieve, build_prompt, ask_ollama_async
+from utils import call_gemini_async
 
 log = logging.getLogger(__name__)
 
@@ -81,20 +85,113 @@ def _persona_prompt(persona: Dict, context_prompt: str) -> str:
 # 2. SINGLE PERSONA RUN — async, safe (never raises)
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def _get_response_with_fallback(
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    pid: str,
+    name: str,
+    t0: float,
+) -> tuple[str, str]:
+    """
+    Await Ollama; if it hasn't answered within GEMINI_FALLBACK_SECONDS, race a
+    hidden Gemini call against the remainder of the persona's timeout budget.
+
+    Ollama keeps running in the background the whole time (it is never
+    cancelled just for being slow) — whichever of Ollama/Gemini finishes
+    first with a usable answer wins; the loser is cancelled.
+
+    Returns (response_text, source) where source is "ollama" or
+    "gemini_fallback". Raises asyncio.TimeoutError if neither finishes within
+    PERSONA_TIMEOUT_SECONDS, or whatever exception ask_ollama_async raised.
+    """
+    if GEMINI_ONLY_MODE:
+        # Ollama is parked for now — go straight to Gemini, no head start.
+        result = await call_gemini_async(prompt)
+        if result:
+            return result, "gemini_only"
+        raise asyncio.TimeoutError(
+            "Gemini-only mode: Gemini call failed and Ollama is disabled (GEMINI_ONLY_MODE=True)."
+        )
+
+    async def _acquire_and_call() -> str:
+        async with semaphore:
+            return await ask_ollama_async(prompt)
+
+    ollama_task = asyncio.ensure_future(_acquire_and_call())
+
+    if not GEMINI_API_KEY:
+        # No key configured — behave exactly as before (no fallback).
+        return await asyncio.wait_for(ollama_task, timeout=PERSONA_TIMEOUT_SECONDS), "ollama"
+
+    try:
+        # asyncio.shield protects ollama_task from being cancelled when this
+        # wait_for times out — it keeps running in the background below.
+        response = await asyncio.wait_for(asyncio.shield(ollama_task), timeout=GEMINI_FALLBACK_SECONDS)
+        return response, "ollama"
+    except asyncio.TimeoutError:
+        pass  # fall through to the hidden Gemini race
+
+    elapsed = round(time.time() - t0, 1)
+    log.info(
+        "[%s] Ollama still running after %ss — starting hidden Gemini fallback (persona=%s)",
+        pid, elapsed, name,
+    )
+    gemini_task = asyncio.ensure_future(call_gemini_async(prompt))
+    deadline = t0 + PERSONA_TIMEOUT_SECONDS
+    pending = {ollama_task, gemini_task}
+
+    # A failed/empty Gemini call finishes (with return_when=FIRST_COMPLETED)
+    # long before Ollama does — that must NOT be treated as "nothing
+    # finished". Loop so a fast Gemini failure just drops out of the race
+    # and Ollama keeps getting awaited for whatever time budget remains.
+    while pending:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+        done, pending = await asyncio.wait(
+            pending, timeout=remaining, return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if gemini_task in done:
+            gemini_result = None
+            try:
+                gemini_result = gemini_task.result()
+            except Exception as exc:
+                log.warning("[%s] Gemini fallback raised: %s", pid, exc)
+            if gemini_result:
+                ollama_task.cancel()
+                log.info("[%s] Gemini fallback answered first (persona=%s)", pid, name)
+                return gemini_result, "gemini_fallback"
+            # Gemini failed/empty — fall through and keep waiting on Ollama.
+
+        if ollama_task in done:
+            return ollama_task.result(), "ollama"
+
+    # Neither finished within the full persona timeout budget.
+    ollama_task.cancel()
+    gemini_task.cancel()
+    raise asyncio.TimeoutError(
+        f"Persona generation timed out after {PERSONA_TIMEOUT_SECONDS}s "
+        "(Ollama slow and Gemini fallback also failed/unavailable)."
+    )
+
+
 async def run_persona(
     persona: Dict,
     context_prompt: str,
     semaphore: asyncio.Semaphore,
 ) -> Dict:
     """
-    Call Ollama for a single persona.
+    Call Ollama for a single persona, with a hidden Gemini fallback if Ollama
+    is too slow (see GEMINI_FALLBACK_SECONDS / _get_response_with_fallback).
 
     The caller (run_all_personas) passes the semaphore explicitly so that it
     is always the one created on the running event loop — not a stale import-
     time object that would silently fail on uvicorn's loop.
 
     Returns:
-        {"id": str, "name": str, "response": str, "error": str}
+        {"id": str, "name": str, "response": str, "error": str, "source": str}
+        source is "ollama", "gemini_fallback", "timeout", or "error".
     """
     pid  = persona["id"]
     name = persona["name"]
@@ -103,16 +200,7 @@ async def run_persona(
     log.info("[%s] Starting generation (persona=%s)...", pid, name)
     t0 = time.time()
     try:
-        # Guard BOTH semaphore acquisition AND the Ollama HTTP call with the
-        # same timeout so a persona can never block forever waiting for a slot.
-        async def _acquire_and_call() -> str:
-            async with semaphore:
-                return await ask_ollama_async(prompt)
-
-        response = await asyncio.wait_for(
-            _acquire_and_call(),
-            timeout=PERSONA_TIMEOUT_SECONDS,
-        )
+        response, source = await _get_response_with_fallback(prompt, semaphore, pid, name, t0)
         response = (response or "").strip()
         elapsed = round(time.time() - t0, 1)
 
@@ -122,18 +210,18 @@ async def run_persona(
                 "[%s] %s elapsed=%ss persona=%s",
                 pid, msg, elapsed, name,
             )
-            return {"id": pid, "name": name, "response": "", "error": msg}
+            return {"id": pid, "name": name, "response": "", "error": msg, "source": source}
 
         log.info(
-            "[%s] Done in %ss persona=%s length=%s preview='%s'",
-            pid, elapsed, name, len(response), _preview(response),
+            "[%s] Done in %ss persona=%s source=%s length=%s preview='%s'",
+            pid, elapsed, name, source, len(response), _preview(response),
         )
-        return {"id": pid, "name": name, "response": response, "error": ""}
-    except asyncio.TimeoutError:
+        return {"id": pid, "name": name, "response": response, "error": "", "source": source}
+    except asyncio.TimeoutError as exc:
         elapsed = round(time.time() - t0, 1)
-        msg = f"Persona generation timed out after {PERSONA_TIMEOUT_SECONDS}s."
+        msg = str(exc) or f"Persona generation timed out after {PERSONA_TIMEOUT_SECONDS}s."
         log.error("[%s] %s elapsed=%ss persona=%s", pid, msg, elapsed, name)
-        return {"id": pid, "name": name, "response": "", "error": msg}
+        return {"id": pid, "name": name, "response": "", "error": msg, "source": "timeout"}
     except Exception as exc:
         elapsed = round(time.time() - t0, 1)
         msg = _error_message(exc)
@@ -141,7 +229,7 @@ async def run_persona(
             "[%s] Failed after %ss persona=%s: %s",
             pid, elapsed, name, msg,
         )
-        return {"id": pid, "name": name, "response": "", "error": msg}
+        return {"id": pid, "name": name, "response": "", "error": msg, "source": "error"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
