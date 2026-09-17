@@ -93,13 +93,13 @@ SCORE_STORE_FILE = ROOT_DIR / "score_store.json"
 # Gemini is unavailable/fails, Ollama's own result is still used when it lands.
 # (Only applies when GEMINI_ONLY_MODE is False.)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_FALLBACK_SECONDS = 90
 
 # When True, Ollama is skipped entirely for personas/voting/synthesis — every
 # call goes straight to Gemini with no head start and no Ollama fallback.
 # Ollama is parked, not removed: flip back to False to restore the race.
-GEMINI_ONLY_MODE = False
+GEMINI_ONLY_MODE = True
 
 PERSONAS = [
     {

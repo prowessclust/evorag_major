@@ -59,4 +59,5 @@ async def evorag_query(query: str, top_k: int = RETRIEVAL_TOP_K) -> dict[str, An
         "all_responses": responses,
         "score_matrix": score_matrix,
         "query_id": query_id,
+        "sources": persona_result["sources"],
     }
