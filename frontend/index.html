@@ -82,6 +82,27 @@
       max-width: 600px;
       margin: 0 auto;
     }
+    .status-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 18px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 6px 14px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    .status-dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.offline { background: var(--error); box-shadow: 0 0 8px var(--error); }
 
     /* ── Section titles ──────────────────────────────────────────────── */
     .section-title {
@@ -241,6 +262,17 @@
       color: var(--muted);
       margin-top: 4px;
       font-family: monospace;
+    }
+    .query-timing {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--success);
+      background: rgba(67,233,123,.1);
+      border: 1px solid rgba(67,233,123,.3);
+      border-radius: 100px;
+      padding: 4px 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     #answer-text {
@@ -473,6 +505,63 @@
     #stats-table td:first-child { text-align: left; font-weight: 600; }
     .stats-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 16px 0; }
 
+    /* ── Persona Health & Evolution ──────────────────────────────── */
+    #section-health { margin-bottom: 32px; }
+    .health-summary {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .health-summary b { color: var(--text); font-size: 15px; }
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .health-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+    }
+    .health-card.at_risk { border-color: var(--warn); }
+    .hc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .hc-name { font-size: 12px; font-weight: 700; }
+    .hc-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      border-radius: 100px;
+      padding: 2px 8px;
+    }
+    .hc-badge.healthy { background: rgba(67,233,123,.15); color: var(--success); }
+    .hc-badge.at_risk  { background: rgba(247,151,30,.15); color: var(--warn); }
+    .hc-meta { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+    .hc-version { font-size: 10px; color: var(--muted); margin-top: 4px; }
+    .replacement-log-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    .replacement-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .replacement-item .r-when { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .health-empty { color: var(--muted); font-size: 13px; }
+
     /* ── Responsive ──────────────────────────────────────────────── */
     @media (max-width: 640px) {
       .app { padding: 0 12px 60px; }
@@ -489,7 +578,11 @@
   <header class="header">
     <div class="header-badge">Evolutionary RAG</div>
     <h1>EvoRAG Research Assistant</h1>
-    <p>Multi-persona AI synthesis with peer consensus voting — powered by local Ollama + FAISS</p>
+    <p>Multi-persona AI synthesis with peer consensus voting — powered by Gemini + FAISS</p>
+    <div id="status-bar" class="status-bar">
+      <span id="status-dot" class="status-dot"></span>
+      <span id="status-text">Checking API…</span>
+    </div>
   </header>
 
   <!-- ── Banners ─────────────────────────────────────────────────── -->
@@ -538,6 +631,7 @@
           <h2>Consensus Answer</h2>
           <div class="query-id" id="query-id-display"></div>
         </div>
+        <div class="query-timing" id="query-timing"></div>
       </div>
       <div id="answer-text" title="Click to copy" role="button" tabindex="0" aria-label="Consensus answer — click to copy"></div>
       <div class="top-personas-label">Top Personas</div>
@@ -594,6 +688,17 @@
           <tbody id="stats-body"></tbody>
         </table>
       </div>
+    </div>
+  </section>
+
+  <!-- ── Section 5: Persona Health & Evolution ──────────────────── -->
+  <section id="section-health">
+    <div class="section-title">Persona Health &amp; Evolution Log</div>
+    <div class="card">
+      <div class="health-summary" id="health-summary"></div>
+      <div class="health-grid" id="health-grid"></div>
+      <div class="replacement-log-title" id="replacement-log-title" style="display:none">Replacement History</div>
+      <div id="replacement-log"></div>
     </div>
   </section>
 
@@ -663,6 +768,12 @@ const statsEmpty   = $('stats-empty');
 const togglePersonas = $('toggle-personas');
 const toggleScores   = $('toggle-scores');
 const toggleSources  = $('toggle-sources');
+const statusDot      = $('status-dot');
+const statusText     = $('status-text');
+const healthSummary  = $('health-summary');
+const healthGrid     = $('health-grid');
+const replacementLogTitle = $('replacement-log-title');
+const replacementLog  = $('replacement-log');
 
 /* ════════════════════════════════════════════════════════════════════
    CHART SETUP
@@ -899,12 +1010,19 @@ function renderScoreMatrix(data) {
         const val = composite === null ? '?' : composite.toFixed(1);
         td.textContent = val;
         if (val !== '?') td.style.backgroundColor = scoreColor(composite);
-        // Tooltip
+        // Tooltip — shows the full per-dimension breakdown, not just the composite
         const tip = document.createElement('span');
         tip.className = 'matrix-tooltip';
         const scorer = personaDisplay(scorerId);
         const scored = personaDisplay(scoredId);
-        tip.textContent = `${scorer} scored ${scored}: ${val}/10`;
+        if (cellScore) {
+          const dimLine = Object.entries(cellScore)
+            .map(([dim, v]) => `${dim.replace(/_/g, ' ')}: ${Number(v).toFixed(1)}`)
+            .join(' · ');
+          tip.textContent = `${scorer} → ${scored} — ${dimLine}`;
+        } else {
+          tip.textContent = `${scorer} → ${scored}: no score received`;
+        }
         td.appendChild(tip);
       }
     });
@@ -1008,6 +1126,88 @@ function updateStatsTable(history) {
   statsEmpty.style.display  = statsBody.children.length ? 'none' : '';
 }
 
+/* Section 5 — Persona health & evolution log */
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/health`);
+    if (!res.ok) throw new Error('bad status');
+    const data = await res.json();
+    statusDot.className = 'status-dot online';
+    statusText.textContent = `API online — ${data.index_vectors} indexed chunks · ${data.embedding_dim}d embeddings`;
+  } catch {
+    statusDot.className = 'status-dot offline';
+    statusText.textContent = 'API offline — start api.py on port 8000';
+  }
+}
+
+async function refreshPersonaHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/persona/status`);
+    if (!res.ok) throw new Error('bad status');
+    const data = await res.json();
+    renderPersonaHealth(data);
+  } catch {
+    healthSummary.innerHTML = '<span class="health-empty">Persona health data unavailable — run a query first, or check the API is online.</span>';
+    healthGrid.innerHTML = '';
+    replacementLogTitle.style.display = 'none';
+    replacementLog.innerHTML = '';
+  }
+}
+
+function renderPersonaHealth(data) {
+  const personas = data.active_personas || [];
+  const replacements = data.replacement_history || [];
+
+  healthSummary.innerHTML = `
+    <span><b>${data.total_replacements ?? 0}</b> total replacements</span>
+    <span><b>${data.queries_since_last_replacement ?? 0}</b> queries since last replacement</span>
+  `;
+
+  healthGrid.innerHTML = '';
+  if (!personas.length) {
+    healthGrid.innerHTML = '<span class="health-empty">No persona performance history yet — run a query to start tracking.</span>';
+  } else {
+    personas.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'health-card' + (p.status === 'at_risk' ? ' at_risk' : '');
+      const avgStr = p.avg_score === null || p.avg_score === undefined ? 'N/A' : Number(p.avg_score).toFixed(2);
+      card.innerHTML = `
+        <div class="hc-top">
+          <span class="hc-name">${escHtml(p.display_name || p.id)}</span>
+          <span class="hc-badge ${p.status}">${p.status === 'at_risk' ? 'At Risk' : 'Healthy'}</span>
+        </div>
+        <div class="hc-meta">
+          <span>Avg score: ${avgStr}</span>
+          <span>${p.query_count} queries</span>
+        </div>
+        <div class="hc-meta">
+          <span>Top-K rate: ${(p.top_k_rate * 100).toFixed(0)}%</span>
+        </div>
+        ${p.version ? `<div class="hc-version">Replaced ${p.version}×</div>` : ''}
+      `;
+      healthGrid.appendChild(card);
+    });
+  }
+
+  if (replacements.length) {
+    replacementLogTitle.style.display = '';
+    replacementLog.innerHTML = '';
+    replacements.slice().reverse().forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'replacement-item';
+      const when = r.timestamp ? new Date(r.timestamp).toLocaleString() : 'unknown time';
+      item.innerHTML = `
+        <div><b>${escHtml(r.replaced || '?')}</b> → <b>${escHtml(r.replacement || '?')}</b> (v${r.version ?? '?'})</div>
+        <div class="r-when">${escHtml(when)} — ${escHtml(r.reason || 'no reason recorded')}</div>
+      `;
+      replacementLog.appendChild(item);
+    });
+  } else {
+    replacementLogTitle.style.display = 'none';
+    replacementLog.innerHTML = '<span class="health-empty">No persona has been replaced yet.</span>';
+  }
+}
+
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -1025,10 +1225,12 @@ async function runQuery() {
 
   state.isLoading = true;
   clearBanners();
+  $('query-timing').textContent = '';
   analyseBtn.disabled = true;
   analyseBtn.textContent = 'Analysing...';
   analyseBtn.classList.add('loading');
   startProgress();
+  const t0 = performance.now();
 
   try {
     const response = await fetch(`${API_BASE}/query/consensus`, {
@@ -1052,6 +1254,8 @@ async function runQuery() {
     }
 
     state.currentResult = data;
+    const elapsedSec = ((performance.now() - t0) / 1000).toFixed(1);
+    $('query-timing').textContent = `Completed in ${elapsedSec}s`;
 
     // Assign persona colors on first result
     const personaIds = Object.keys(data.all_responses || {});
@@ -1086,6 +1290,9 @@ async function runQuery() {
       topPersonas: data.top_personas || [],
     });
     updateEvolutionChart(state.evolutionHistory);
+
+    // Section 5 — refresh persona health from the backend's persistent store
+    refreshPersonaHealth();
 
   } catch (err) {
     if (err.name === 'TypeError' && err.message.includes('fetch')) {
@@ -1136,6 +1343,10 @@ function applyToggle() {
 togglePersonas.addEventListener('change', applyToggle);
 toggleScores.addEventListener('change',   applyToggle);
 toggleSources.addEventListener('change',  applyToggle);
+
+// Initial load — API status + persisted persona health
+checkHealth();
+refreshPersonaHealth();
 </script>
 </body>
 </html>
