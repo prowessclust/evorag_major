@@ -24,8 +24,10 @@ from config import (
     RETRIEVAL_CANDIDATE_MULTIPLIER,
     RETRIEVAL_MIN_CANDIDATES,
     PERSONA_TIMEOUT_SECONDS,
+    GEMINI_ONLY_MODE,
 )
 from embedder import query as faiss_query, load_index, build_or_load, release_model
+from utils import call_gemini_async
 
 log = logging.getLogger(__name__)
 
@@ -292,6 +294,14 @@ async def ask_ollama_async(prompt: str, model: str = OLLAMA_MODEL) -> str:
     Returns:
         The model's response text string.
     """
+    if GEMINI_ONLY_MODE:
+        result = await call_gemini_async(prompt)
+        if not result:
+            raise ConnectionError(
+                "Gemini-only mode: Gemini call failed (GEMINI_ONLY_MODE=True, Ollama disabled)."
+            )
+        return result
+
     url = f"{OLLAMA_BASE_URL}/api/generate"
     payload = {
         "model": model,

@@ -137,6 +137,7 @@ class ConsensusQueryResponse(BaseModel):
     all_responses: Dict[str, Optional[str]]
     score_matrix:  Dict[str, Dict[str, Optional[Dict[str, float]]]]
     query_id:      str
+    sources:       List[SourceItem]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
